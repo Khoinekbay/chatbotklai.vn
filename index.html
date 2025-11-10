@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>KL AI</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
+    <script>
+      window.MathJax = {
+        tex: {
+          inlineMath: [['$', '$'], ['\\(', '\\)']],
+          displayMath: [['$$', '$$'], ['\\[', '\\]']]
+        },
+        svg: {
+          fontCache: 'global'
+        }
+      };
+    </script>
+    <script id="MathJax-script" async
+      src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js">
+    </script>
+    <script src="https://d3js.org/d3.v3.min.js"></script>
+    <script src="https://unpkg.com/function-plot/dist/function-plot.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&family=Lora:ital,wght@0,400;0,700;1,400&family=Roboto+Mono:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+      :root {
+        --background: #ffffff;
+        --sidebar: #f1f5f9;
+        --text-primary: #0f172a;
+        --text-secondary: #64748b;
+        --border: #e2e8f0;
+        --card: #ffffff;
+        --card-hover: #f8fafc;
+        --user-bubble-bg: #2563eb;
+        --user-bubble-text: #ffffff;
+        --model-bubble-bg: #e2e8f0;
+        --model-bubble-text: #1e293b;
+        --input-bg: #f1f5f9;
+        --brand: #2563eb;
+        --brand-secondary: #dbeafe;
+        --table-border: #cbd5e1;
+      }
+      html.dark {
+        --background: #0f172a;
+        --sidebar: #020617;
+        --text-primary: #f1f5f9;
+        --text-secondary: #94a3b8;
+        --border: #334155;
+        --card: #1e293b;
+        --card-hover: #334155;
+        --user-bubble-bg: #2563eb;
+        --user-bubble-text: #ffffff;
+        --model-bubble-bg: #334155;
+        --model-bubble-text: #f1f5f9;
+        --input-bg: #1e293b;
+        --brand: #3b82f6;
+        --brand-secondary: #1e293b;
+        --table-border: #475569;
+      }
+      @keyframes slideInUp {
+        from {
+          transform: translateY(10px);
+          opacity: 0;
+        }
+        to {
+          transform: translateY(0);
+          opacity: 1;
+        }
+      }
+      @keyframes dynamic-dot {
+        0%, 100% {
+          transform: translateY(0) scale(0.9);
+          opacity: 0.7;
+        }
+        50% {
+          transform: translateY(-5px) scale(1.1);
+          opacity: 1;
+        }
+      }
+      @keyframes slideInLeft {
+        from {
+          transform: translateX(-100%);
+        }
+        to {
+          transform: translateX(0);
+        }
+      }
+      /* Table styles for markdown */
+      .prose .table-wrapper {
+        overflow-x: auto;
+      }
+      .prose table {
+        width: 100%;
+        border-collapse: collapse;
+        table-layout: auto;
+        margin-top: 1em;
+        margin-bottom: 1em;
+        border: 1px solid var(--table-border);
+        border-radius: 0.75rem;
+        overflow: hidden;
+      }
+      .prose table th, .prose table td {
+        border: 1px solid var(--table-border);
+        padding: 0.5rem 0.75rem;
+        text-align: left;
+        overflow-wrap: break-word;
+        word-wrap: break-word; /* for older browsers */
+      }
+      .prose table th {
+        background-color: var(--sidebar);
+        font-weight: 600;
+      }
+
+      /* Styles for Bảng Biến Thiên */
+      .variation-table-container {
+        display: flex;
+        justify-content: center;
+        margin: 1em 0;
+        font-size: 1.1rem; /* Slightly larger font for readability */
+      }
+      .variation-table-container table {
+        border-collapse: collapse;
+        border: 2px solid var(--table-border); /* Thicker border for emphasis */
+        font-family: 'Lora', serif;
+        table-layout: fixed; /* This ensures columns are evenly spaced */
+        width: auto;
+      }
+      .variation-table-container th,
+      .variation-table-container td {
+        border: 1px solid var(--table-border);
+        padding: 0.75rem 1rem; /* More padding */
+        text-align: center;
+        min-width: 5rem; /* Ensure columns have enough space */
+      }
+      .variation-table-container td:first-child,
+      .variation-table-container th:first-child {
+        font-weight: bold;
+        font-style: italic;
+        background-color: var(--sidebar);
+        min-width: 4rem; /* Header column can be a bit narrower */
+        border-right: 2px solid var(--table-border); /* Emphasize header column */
+      }
+
+      /* Styles for Bảng Xét Dấu */
+      .sign-table-container {
+        display: flex;
+        justify-content: center;
+        margin: 1em 0;
+      }
+      .sign-table-container table {
+        border-collapse: collapse;
+        border: 1px solid var(--table-border);
+        font-family: 'Inter', sans-serif;
+        table-layout: fixed;
+        width: auto;
+      }
+      .sign-table-container th,
+      .sign-table-container td {
+        border: 1px solid var(--table-border);
+        padding: 0.5rem 0.75rem;
+        text-align: center;
+        min-width: 4rem;
+      }
+      .sign-table-container td:first-child,
+      .sign-table-container th:first-child {
+        font-weight: 500; /* medium weight */
+        background-color: var(--sidebar);
+      }
+
+
+      /* Fix for text wrapping on mobile & copy button positioning */
+      .prose pre {
+        position: relative;
+        white-space: pre-wrap;
+        word-break: break-all;
+        overflow-x: auto;
+      }
+      .prose code {
+        word-break: break-all;
+      }
+      
+      .copy-code-button {
+        position: absolute;
+        top: 0.5rem;
+        right: 0.5rem;
+        padding: 0.375rem;
+        background-color: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 0.375rem;
+        color: var(--text-secondary);
+        cursor: pointer;
+        opacity: 0;
+        transition: opacity 0.2s, color 0.2s, background-color 0.2s;
+        z-index: 10;
+      }
+      .prose pre:hover .copy-code-button {
+          opacity: 1;
+      }
+      .copy-code-button:hover {
+          background-color: var(--card-hover);
+          color: var(--text-primary);
+      }
+      .copy-code-button.copied {
+          color: #10b981; /* green-500 */
+      }
+
+
+      /* Styles for the new FlashcardView component */
+      .flashcard-item-cover {
+        position: absolute;
+        inset: 0;
+        background-color: var(--brand);
+        border-radius: 0.5rem;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 0.875rem;
+        font-weight: 500;
+        color: var(--user-bubble-text);
+        transition: transform 0.35s ease-in-out, opacity 0.35s ease-in-out;
+        transform-origin: center;
+      }
+      .flashcard-item-cover.is-revealed {
+        transform: scale(0.7) rotate(-10deg);
+        opacity: 0;
+        pointer-events: none;
+      }
+    </style>
+    <script>
+      tailwind.config = {
+        darkMode: 'class',
+        theme: {
+          extend: {
+            colors: {
+              background: 'var(--background)',
+              sidebar: 'var(--sidebar)',
+              'text-primary': 'var(--text-primary)',
+              'text-secondary': 'var(--text-secondary)',
+              border: 'var(--border)',
+              card: 'var(--card)',
+              'card-hover': 'var(--card-hover)',
+              'input-bg': 'var(--input-bg)',
+              brand: {
+                DEFAULT: 'var(--brand)',
+                secondary: 'var(--brand-secondary)',
+              },
+              'user-bubble-bg': 'var(--user-bubble-bg)',
+              'user-bubble-text': 'var(--user-bubble-text)',
+              'model-bubble-bg': 'var(--model-bubble-bg)',
+              'model-bubble-text': 'var(--model-bubble-text)',
+            },
+            fontFamily: {
+              sans: ['Inter', 'sans-serif'],
+              serif: ['Lora', 'serif'],
+              mono: ['Roboto Mono', 'monospace'],
+            },
+            animation: {
+              'slide-in-up': 'slideInUp 0.3s ease-out forwards',
+              'dynamic-dot': 'dynamic-dot 1.4s ease-in-out infinite',
+              'slide-in-left': 'slideInLeft 0.3s ease-out forwards',
+            }
+          }
+        }
+      }
+    </script>
+  <script type="importmap">
+{
+  "imports": {
+    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/",
+    "@google/genai": "https://aistudiocdn.com/@google/genai@^1.29.0",
+    "react/": "https://aistudiocdn.com/react@^19.2.0/",
+    "react": "https://aistudiocdn.com/react@^19.2.0"
+  }
+}
+</script>
+<link rel="stylesheet" href="/index.css">
+</head>
+  <body class="bg-background text-text-primary font-sans">
+    <div id="root"></div>
+    <script type="module" src="/index.tsx"></script>
+  </body>
+</html>
