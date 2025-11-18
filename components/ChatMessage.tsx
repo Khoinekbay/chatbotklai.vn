@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { type Message, type MindMapNode } from '../types';
-import { UserIcon, AngryBotIcon, SpeakerIcon, ShareIcon, CheckIcon, BellPlusIcon, FlashcardIcon, FileIcon, DownloadIcon, MindMapIcon } from './Icons';
+import { UserIcon, AngryBotIcon, SpeakerIcon, ShareIcon, CheckIcon, BellPlusIcon, FlashcardIcon, FileIcon, DownloadIcon, MindMapIcon, ThumbUpIcon, ThumbDownIcon, HelpCircleIcon, RegenerateIcon, ChevronUpIcon, ExplainIcon, ExampleIcon, SummarizeIcon, ChevronDownIcon } from './Icons';
 import { type FollowUpAction } from '../App';
 
 
@@ -11,6 +12,7 @@ declare global {
       typesetPromise: () => Promise<void>;
     };
     functionPlot: (options: any) => any;
+    hljs: any;
   }
 }
 
@@ -22,6 +24,9 @@ interface ChatMessageProps {
   onApplySchedule?: (markdownText: string) => void;
   onOpenFlashcards?: (cards: { term: string; definition: string }[]) => void;
   onOpenMindMap?: (data: MindMapNode) => void;
+  onAskSelection?: (selectedText: string) => void;
+  onRegenerate?: () => void;
+  userAvatar?: string;
 }
 
 
@@ -84,14 +89,17 @@ const markdownToHTML = (markdown: string): string => {
   return html;
 }
 
-const ChatMessage: React.FC<ChatMessageProps> = ({ message, isLastMessage = false, isLoading = false, onFollowUpClick, onApplySchedule, onOpenFlashcards, onOpenMindMap }) => {
+const ChatMessage: React.FC<ChatMessageProps> = ({ message, isLastMessage = false, isLoading = false, onFollowUpClick, onApplySchedule, onOpenFlashcards, onOpenMindMap, onAskSelection, onRegenerate, userAvatar }) => {
   const [displayedText, setDisplayedText] = useState('');
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isCopied, setIsCopied] = useState(false);
+  const [feedback, setFeedback] = useState<'like' | 'dislike' | null>(null);
+  const [selectionPopover, setSelectionPopover] = useState<{ visible: boolean; x: number; y: number; } | null>(null);
   const isUser = message.role === 'user';
   const timeoutRef = useRef<number | null>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
+  const selectedTextRef = useRef('');
   const messageId = useRef(`msg-${Math.random().toString(36).substring(2, 9)}`); // Unique ID for this message instance
 
 
@@ -154,18 +162,21 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, isLastMessage = fals
         // Render graphs
         const graphElements = contentRef.current.querySelectorAll('.graph-container');
         graphElements.forEach(el => {
-            if (el.innerHTML) return; // Don't re-render if it already has content (e.g., an error message or a graph)
-            const functionStrings = (el.getAttribute('data-functions') || '').split(';').filter(Boolean);
-            if (functionStrings.length > 0 && window.functionPlot) {
+            if (el.innerHTML) return; // Don't re-render if it already has content
+            const functionDataString = el.getAttribute('data-functions');
+            if (functionDataString) {
                 try {
-                    const containerWidth = el.clientWidth || 350;
-                    window.functionPlot({
-                        target: `#${el.id}`,
-                        width: containerWidth,
-                        height: Math.min(containerWidth * 0.75, 400),
-                        grid: true,
-                        data: functionStrings.map(fn => ({ fn }))
-                    });
+                    const functionData = JSON.parse(functionDataString);
+                    if (Array.isArray(functionData) && functionData.length > 0 && window.functionPlot) {
+                        const containerWidth = el.clientWidth || 350;
+                        window.functionPlot({
+                            target: `#${el.id}`,
+                            width: containerWidth,
+                            height: Math.min(containerWidth * 0.75, 400),
+                            grid: true,
+                            data: functionData
+                        });
+                    }
                 } catch (e) {
                     console.error("Function plot error:", e);
                     const error = e as Error;
@@ -209,42 +220,126 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, isLastMessage = fals
         // Render Bảng Xét Dấu
         processCustomTable('bsd', 'sign-table-container');
 
-        // Add Copy Code buttons
+        // --- START: Code Block Enhancements ---
         const preElements = contentRef.current.querySelectorAll('pre');
+        const MAX_CODE_HEIGHT = 300; // in pixels
+
         preElements.forEach(pre => {
-            if (pre.querySelector('.copy-code-button')) return;
+            // Avoid processing blocks that have already been enhanced
+            if (pre.parentElement?.classList.contains('code-block-wrapper')) return;
 
-            const button = document.createElement('button');
-            button.className = 'copy-code-button';
-            button.setAttribute('aria-label', 'Sao chép mã');
-            button.title = 'Sao chép mã';
-
-            const copyIconHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"></rect><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"></path></svg>`;
-            const checkIconHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>`;
-            
-            button.innerHTML = copyIconHTML;
-
-            button.addEventListener('click', () => {
-                const codeElement = pre.querySelector('code');
-                if (codeElement) {
-                    navigator.clipboard.writeText(codeElement.innerText).then(() => {
-                        button.innerHTML = checkIconHTML;
-                        button.classList.add('copied');
-                        setTimeout(() => {
-                            button.innerHTML = copyIconHTML;
-                            button.classList.remove('copied');
-                        }, 2000);
-                    }).catch(err => {
-                        console.error('Không thể sao chép mã:', err);
-                        alert('Lỗi: Không thể sao chép vào clipboard.');
-                    });
+            // 1. Syntax Highlighting
+            const codeElement = pre.querySelector('code');
+            if (codeElement && window.hljs) {
+                try {
+                    window.hljs.highlightElement(codeElement);
+                } catch (e) {
+                    console.error('Highlight.js error:', e);
                 }
-            });
+            }
+            
+            // Create a wrapper for the <pre> tag
+            const wrapper = document.createElement('div');
+            wrapper.className = 'code-block-wrapper not-prose';
+            pre.parentNode?.replaceChild(wrapper, pre);
+            wrapper.appendChild(pre);
+            
+            // 2. Add Copy Button
+            if (!pre.querySelector('.copy-code-button')) {
+                const button = document.createElement('button');
+                button.className = 'copy-code-button';
+                button.setAttribute('aria-label', 'Sao chép mã');
+                button.title = 'Sao chép mã';
 
-            pre.appendChild(button);
+                const copyIconHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"></rect><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"></path></svg>`;
+                const checkIconHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>`;
+                
+                button.innerHTML = copyIconHTML;
+
+                button.addEventListener('click', () => {
+                    if (codeElement) {
+                        navigator.clipboard.writeText(codeElement.innerText).then(() => {
+                            button.innerHTML = checkIconHTML;
+                            button.classList.add('copied');
+                            setTimeout(() => {
+                                button.innerHTML = copyIconHTML;
+                                button.classList.remove('copied');
+                            }, 2000);
+                        }).catch(err => {
+                            console.error('Không thể sao chép mã:', err);
+                        });
+                    }
+                });
+                pre.appendChild(button);
+            }
+
+            // 3. Add Collapsing logic for long code blocks
+            setTimeout(() => {
+                const needsCollapsing = pre.scrollHeight > MAX_CODE_HEIGHT;
+                if (needsCollapsing) {
+                    pre.classList.add('is-collapsible');
+                    pre.style.maxHeight = `${MAX_CODE_HEIGHT}px`;
+
+                    const showMoreButton = document.createElement('button');
+                    showMoreButton.className = 'show-more-button';
+                    
+                    const chevronIconHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>`;
+                    showMoreButton.innerHTML = `${chevronIconHTML}<span>Show more</span>`;
+                    
+                    showMoreButton.addEventListener('click', () => {
+                        const isExpanded = pre.classList.toggle('is-expanded');
+                        if (isExpanded) {
+                            pre.style.maxHeight = `${pre.scrollHeight}px`;
+                            showMoreButton.querySelector('span')!.textContent = 'Show less';
+                        } else {
+                            pre.style.maxHeight = `${pre.scrollHeight}px`;
+                            requestAnimationFrame(() => {
+                                pre.style.maxHeight = `${MAX_CODE_HEIGHT}px`;
+                            });
+                            showMoreButton.querySelector('span')!.textContent = 'Show more';
+                        }
+                    });
+                    wrapper.appendChild(showMoreButton);
+                }
+            }, 50);
         });
+        // --- END: Code Block Enhancements ---
     }
   }, [displayedText, isLastMessage, isLoading, message.role]);
+
+  useEffect(() => {
+    const handleMouseUp = () => {
+        if (isUser || !contentRef.current || !onAskSelection) return;
+        
+        setTimeout(() => {
+            const selection = window.getSelection();
+            if (selection && !selection.isCollapsed && selection.toString().trim().length > 0) {
+                if (contentRef.current?.contains(selection.anchorNode)) {
+                    const range = selection.getRangeAt(0);
+                    const rect = range.getBoundingClientRect();
+                    
+                    selectedTextRef.current = selection.toString();
+                    
+                    setSelectionPopover({
+                        visible: true,
+                        x: rect.left + rect.width / 2,
+                        y: rect.top + window.scrollY - 10,
+                    });
+                } else {
+                    setSelectionPopover(null);
+                }
+            } else {
+                setSelectionPopover(null);
+            }
+        }, 10);
+    };
+
+    document.addEventListener('mouseup', handleMouseUp);
+    
+    return () => {
+        document.removeEventListener('mouseup', handleMouseUp);
+    };
+}, [isUser, onAskSelection]);
 
   const handleToggleSpeech = () => {
     if (isSpeaking) {
@@ -296,6 +391,12 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, isLastMessage = fals
     URL.revokeObjectURL(url);
   };
 
+  const handleFeedback = (type: 'like' | 'dislike') => {
+    setFeedback(prev => (prev === type ? null : type));
+    // In a real application, you would send this feedback to a server.
+    // e.g., sendFeedbackToServer(messageId, type);
+  };
+
   const renderContent = (text: string) => {
     if (!text) return null;
 
@@ -309,9 +410,70 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, isLastMessage = fals
     });
 
     textWithPlaceholders = textWithPlaceholders.replace(/```graph\n([\s\S]*?)\n```/g, (match, content) => {
-        const index = Math.random().toString(36).substring(7); // Use random index for safety
-        const functions = content.trim().split('\n').map((fn:string) => fn.replace(/f\(x\)\s*=\s*|y\s*=\s*/, '').trim()).join(';');
-        return `<div id="graph-${messageId.current}-${index}" class="graph-container my-4" data-functions="${functions}"></div>`;
+        const index = Math.random().toString(36).substring(7);
+        
+        const functionData = content.trim().split('\n').map(line => {
+            const trimmedLine = line.trim();
+            if (!trimmedLine) return null;
+
+            // Regex to find "from ... to ..." or "từ ... đến ..."
+            const rangeRegex = /(?:from|từ)\s+([-\d\w\s.πpi*+/()]+)\s+(?:to|đến)\s+([-\d\w\s.πpi*+/()]+)/iu;
+            const rangeMatch = trimmedLine.match(rangeRegex);
+
+            let fnString = trimmedLine;
+            let range: [number, number] | undefined = undefined;
+
+            if (rangeMatch) {
+                fnString = trimmedLine.substring(0, rangeMatch.index).trim();
+                
+                const parseRangeValue = (val: string): number => {
+                    const cleanedVal = val.trim().toLowerCase().replace(/π/g, 'pi');
+                    try {
+                        const expression = cleanedVal.replace(/\bpi\b/g, `(${Math.PI})`);
+                        // Allow only a safe subset of characters
+                        if (/^[-()\d\s*+./]+$/.test(expression)) {
+                            const result = new Function(`return ${expression}`)();
+                            if (typeof result === 'number' && isFinite(result)) {
+                                return result;
+                            }
+                        }
+                    } catch (e) { /* ignore parse error */ }
+                    // Fallback for simple numbers
+                    return parseFloat(cleanedVal);
+                };
+
+                const start = parseRangeValue(rangeMatch[1]);
+                const end = parseRangeValue(rangeMatch[2]);
+                
+                if (!isNaN(start) && !isNaN(end)) {
+                    range = [start, end];
+                }
+            }
+
+            let finalFn: string | null = null;
+            const definitionMatch = fnString.match(/^(?:f\(x\)|y)\s*=\s*(.*)/i);
+            if (definitionMatch && definitionMatch[1]) {
+                finalFn = definitionMatch[1].trim();
+            } else {
+                // Heuristic to check if it's a plain expression
+                const nonMathChars = fnString.replace(/[xy\d\s.()+\-*/^]|sin|cos|tan|log|ln|sqrt|abs|pi|e/gi, '');
+                if (nonMathChars.length === 0) {
+                    finalFn = fnString;
+                }
+            }
+
+            if (finalFn) {
+                const dataObject: { fn: string, range?: [number, number] } = { fn: finalFn };
+                if (range) {
+                    dataObject.range = range;
+                }
+                return dataObject;
+            }
+            return null;
+        }).filter((item): item is { fn: string, range?: [number, number] } => item !== null);
+        
+        const encodedData = JSON.stringify(functionData).replace(/'/g, '&apos;');
+        return `<div id="graph-${messageId.current}-${index}" class="graph-container my-4" data-functions='${encodedData}'></div>`;
     });
     
     let html = markdownToHTML(textWithPlaceholders);
@@ -328,134 +490,189 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, isLastMessage = fals
   const isTyping = isLastMessage && isLoading && message.role === 'model' && message.text.length > 0;
 
   const bubbleClasses = isUser 
-    ? 'bg-gradient-to-br from-brand to-blue-700 text-user-bubble-text' 
+    ? 'bg-user-bubble-bg text-user-bubble-text' 
+    : message.isError
+    ? 'bg-red-500/10 text-red-500 dark:text-red-400 border border-red-500/30 prose-p:text-current prose-strong:text-current'
     : 'bg-model-bubble-bg text-model-bubble-text';
   const alignmentClasses = isUser ? 'justify-end' : 'justify-start';
   const IconComponent = isUser ? UserIcon : AngryBotIcon;
   const iconClasses = isUser ? 'text-brand' : 'text-amber-400';
-  const showFollowUpActions = !isUser && (!isLastMessage || !isLoading) && message.text && onFollowUpClick && !message.mindMapData;
+  const showFollowUpActions = !isUser && (!isLastMessage || !isLoading) && message.text && onFollowUpClick && !message.mindMapData && !message.isError;
   const showApplyScheduleButton = !isUser && (!isLastMessage || !isLoading) && message.text.includes('|') && message.text.includes('---') && onApplySchedule;
   const showOpenFlashcardsButton = !isUser && message.flashcards && message.flashcards.length > 0 && onOpenFlashcards;
   const showDownloadButton = !isUser && message.fileToDownload && (!isLastMessage || !isLoading);
   const showOpenMindMapButton = !isUser && message.mindMapData && onOpenMindMap && (!isLastMessage || !isLoading);
 
-  if (!textToDisplay && message.role === 'model' && !isTyping && !message.file && !message.mindMapData) {
+  if (!textToDisplay && message.role === 'model' && !isTyping && (!message.files || message.files.length === 0) && !message.mindMapData) {
     return null;
   }
   
   return (
-    <div className="animate-slide-in-up">
-      <div className={`flex items-start gap-3 w-full max-w-full ${alignmentClasses}`}>
-        {!isUser && <IconComponent className={`w-8 h-8 flex-shrink-0 mt-1 ${iconClasses}`} />}
-        <div 
-          ref={contentRef}
-          className={`px-4 py-3 rounded-2xl max-w-xl lg:max-w-3xl prose prose-sm dark:prose-invert break-words shadow-md ${bubbleClasses}`}
-        >
-          {message.file && (
-            <div className="mb-2 not-prose">
-              {message.file.mimeType.startsWith('image/') ? (
-                <img src={message.file.dataUrl} alt={message.file.name} className="max-w-xs max-h-64 rounded-lg" />
-              ) : (
-                <a
-                  href={message.file.dataUrl}
-                  download={message.file.name}
-                  className="flex items-center gap-3 p-3 bg-card/50 dark:bg-card/20 rounded-lg hover:bg-card/80 dark:hover:bg-card/40 transition-colors border border-border"
-                  title={`Tải xuống ${message.file.name}`}
-                >
-                  <FileIcon className="w-6 h-6 text-text-secondary flex-shrink-0" />
-                  <span className="text-sm font-medium text-text-primary truncate">{message.file.name}</span>
-                </a>
-              )}
-            </div>
-          )}
-          {renderContent(textToDisplay)}
-          {isTyping && <span className="inline-block w-2 h-4 bg-gray-400 dark:bg-gray-500 animate-pulse ml-1 align-bottom"></span>}
+    <>
+      {selectionPopover?.visible && !isUser && createPortal(
+          <div
+              className="fixed bg-card border border-border shadow-lg rounded-full flex items-center gap-2 px-3 py-1.5 animate-slide-in-up"
+              style={{
+                  top: `${selectionPopover.y}px`,
+                  left: `${selectionPopover.x}px`,
+                  transform: 'translate(-50%, -100%)',
+                  zIndex: 100,
+                  animationDuration: '0.15s'
+              }}
+              onMouseDown={(e) => e.stopPropagation()}
+          >
+              <button
+                  onClick={() => {
+                      if (onAskSelection) {
+                          onAskSelection(selectedTextRef.current);
+                      }
+                      setSelectionPopover(null);
+                      selectedTextRef.current = '';
+                      window.getSelection()?.removeAllRanges();
+                  }}
+                  className="flex items-center gap-1.5 text-sm font-medium text-brand hover:opacity-80 transition-opacity"
+              >
+                  <HelpCircleIcon className="w-4 h-4" />
+                  <span>Hỏi KL AI</span>
+              </button>
+          </div>,
+          document.body
+      )}
+      <div className="animate-slide-in-up">
+        <div className={`flex items-start gap-3 w-full max-w-full ${alignmentClasses}`}>
+          {!isUser && <IconComponent className={`w-8 h-8 flex-shrink-0 mt-1 ${iconClasses}`} />}
+          <div 
+            ref={contentRef}
+            className={`px-4 py-3 rounded-2xl max-w-xl lg:max-w-3xl prose prose-sm dark:prose-invert break-words shadow-md ${bubbleClasses}`}
+          >
+            {message.files && message.files.length > 0 && (
+              <div className={`mb-2 not-prose grid gap-2 ${message.files.length > 1 ? 'grid-cols-2' : 'grid-cols-1'}`}>
+                {message.files.map((file, index) => (
+                  file.mimeType.startsWith('image/') ? (
+                      <img key={index} src={file.dataUrl} alt={file.name} className="max-w-full max-h-64 rounded-lg object-contain" />
+                  ) : (
+                      <a
+                      key={index}
+                      href={file.dataUrl}
+                      download={file.name}
+                      className="flex items-center gap-3 p-3 bg-card/50 dark:bg-card/20 rounded-lg hover:bg-card/80 dark:hover:bg-card/40 transition-colors border border-border"
+                      title={`Tải xuống ${file.name}`}
+                      >
+                      <FileIcon className="w-6 h-6 text-text-secondary flex-shrink-0" />
+                      <span className="text-sm font-medium text-text-primary truncate">{file.name}</span>
+                      </a>
+                  )
+                ))}
+              </div>
+            )}
+            {renderContent(textToDisplay)}
+            {isTyping && <span className="inline-block w-2 h-4 bg-gray-400 dark:bg-gray-500 animate-pulse ml-1 align-bottom"></span>}
+          </div>
+          {/* FIX: Conditionally render user avatar or default icon. */}
+          {isUser && (userAvatar ? (
+            <span className="w-8 h-8 flex-shrink-0 mt-1 rounded-full bg-card-hover flex items-center justify-center text-2xl">
+              {userAvatar}
+            </span>
+          ) : (
+            <IconComponent className={`w-8 h-8 flex-shrink-0 mt-1 ${iconClasses}`} />
+          ))}
         </div>
-        {isUser && <IconComponent className={`w-8 h-8 flex-shrink-0 mt-1 ${iconClasses}`} />}
-      </div>
-      
-      <div className={`flex items-center flex-wrap gap-2 mt-2 ${isUser ? 'justify-end' : 'pl-11'}`}>
-        {!isUser && message.text && (!isLastMessage || !isLoading) && (
+        
+        <div className={`flex items-center flex-wrap gap-2 mt-2 ${isUser ? 'justify-end' : 'pl-11'}`}>
+          {!isUser && !message.isError && message.text && (!isLastMessage || !isLoading) && (
+              <>
+                  <button 
+                    onClick={handleToggleSpeech} 
+                    className="p-1.5 bg-card-hover/60 hover:bg-card-hover rounded-full transition-colors"
+                    aria-label={isSpeaking ? "Dừng đọc" : "Đọc to"}
+                    title={isSpeaking ? "Dừng đọc" : "Đọc to"}
+                  >
+                    <SpeakerIcon className={`w-4 h-4 ${isSpeaking ? 'text-brand' : 'text-text-secondary'}`} />
+                  </button>
+                  <button
+                      onClick={handleShare}
+                      className="p-1.5 bg-card-hover/60 hover:bg-card-hover rounded-full transition-colors"
+                      aria-label={isCopied ? "Đã sao chép!" : "Chia sẻ"}
+                      title={isCopied ? "Đã sao chép!" : "Chia sẻ"}
+                  >
+                      {isCopied ? <CheckIcon className="w-4 h-4 text-green-500" /> : <ShareIcon className="w-4 h-4 text-text-secondary" />}
+                  </button>
+                  <button onClick={() => handleFeedback('like')} className="p-1.5 bg-card-hover/60 hover:bg-card-hover rounded-full transition-colors" title="Hài lòng">
+                      <ThumbUpIcon className={`w-4 h-4 transition-colors ${feedback === 'like' ? 'text-brand' : 'text-text-secondary'}`} />
+                  </button>
+                  <button onClick={() => handleFeedback('dislike')} className="p-1.5 bg-card-hover/60 hover:bg-card-hover rounded-full transition-colors" title="Không hài lòng">
+                      <ThumbDownIcon className={`w-4 h-4 transition-colors ${feedback === 'dislike' ? 'text-red-500' : 'text-text-secondary'}`} />
+                  </button>
+                  {isLastMessage && onRegenerate && (
+                    <button onClick={onRegenerate} className="p-1.5 bg-card-hover/60 hover:bg-card-hover rounded-full transition-colors" title="Tạo lại phản hồi">
+                        <RegenerateIcon className="w-4 h-4 text-text-secondary"/>
+                    </button>
+                  )}
+                  <div className="w-[1px] h-4 bg-border mx-1"></div>
+              </>
+          )}
+
+          {showDownloadButton && (
+            <button
+              onClick={() => handleDownload(message.fileToDownload!)}
+              className="bg-brand/10 hover:bg-brand/20 text-brand text-xs px-3 py-1.5 rounded-full transition-colors flex items-center gap-1.5 font-semibold"
+            >
+              <DownloadIcon className="w-4 h-4" /> Tải xuống {message.fileToDownload!.name}
+            </button>
+          )}
+
+          {showOpenMindMapButton && (
+            <button
+              onClick={() => onOpenMindMap(message.mindMapData!)}
+              className="bg-brand/10 hover:bg-brand/20 text-brand text-xs px-3 py-1.5 rounded-full transition-colors flex items-center gap-1.5 font-semibold"
+            >
+              <MindMapIcon className="w-4 h-4" /> Mở sơ đồ tư duy
+            </button>
+          )}
+
+          {showOpenFlashcardsButton && onOpenFlashcards && (
+            <button
+              onClick={() => onOpenFlashcards(message.flashcards!)}
+              className="bg-brand/10 hover:bg-brand/20 text-brand text-xs px-3 py-1.5 rounded-full transition-colors flex items-center gap-1.5 font-semibold"
+            >
+              <FlashcardIcon className="w-4 h-4" /> Mở lại bộ thẻ
+            </button>
+          )}
+
+          {showApplyScheduleButton && onApplySchedule && (
+            <button
+              onClick={() => onApplySchedule(message.text)}
+              className="bg-brand/10 hover:bg-brand/20 text-brand text-xs px-3 py-1.5 rounded-full transition-colors flex items-center gap-1.5 font-semibold"
+            >
+              <BellPlusIcon className="w-4 h-4" /> Áp dụng lịch & Bật thông báo
+            </button>
+          )}
+
+          {showFollowUpActions && (
             <>
-                <button 
-                onClick={handleToggleSpeech} 
-                className="p-1.5 bg-card-hover/60 hover:bg-card-hover rounded-full transition-colors"
-                aria-label={isSpeaking ? "Dừng đọc" : "Đọc to"}
-                title={isSpeaking ? "Dừng đọc" : "Đọc to"}
+                <button
+                    onClick={() => onFollowUpClick(message.text, 'explain')}
+                    className="bg-brand/10 hover:bg-brand/20 text-brand text-xs px-3 py-1.5 rounded-full transition-colors flex items-center gap-1.5 font-semibold"
                 >
-                <SpeakerIcon className={`w-4 h-4 ${isSpeaking ? 'text-brand' : 'text-text-secondary'}`} />
+                    <ExplainIcon className="w-4 h-4" /> Giải thích thêm
                 </button>
                 <button
-                    onClick={handleShare}
-                    className="p-1.5 bg-card-hover/60 hover:bg-card-hover rounded-full transition-colors"
-                    aria-label={isCopied ? "Đã sao chép!" : "Chia sẻ"}
-                    title={isCopied ? "Đã sao chép!" : "Chia sẻ"}
+                    onClick={() => onFollowUpClick(message.text, 'example')}
+                    className="bg-brand/10 hover:bg-brand/20 text-brand text-xs px-3 py-1.5 rounded-full transition-colors flex items-center gap-1.5 font-semibold"
                 >
-                    {isCopied ? <CheckIcon className="w-4 h-4 text-green-500" /> : <ShareIcon className="w-4 h-4 text-text-secondary" />}
+                    <ExampleIcon className="w-4 h-4" /> Cho ví dụ
+                </button>
+                <button
+                    onClick={() => onFollowUpClick(message.text, 'summarize')}
+                    className="bg-brand/10 hover:bg-brand/20 text-brand text-xs px-3 py-1.5 rounded-full transition-colors flex items-center gap-1.5 font-semibold"
+                >
+                    <SummarizeIcon className="w-4 h-4" /> Tóm tắt
                 </button>
             </>
-        )}
-
-        {showDownloadButton && (
-          <button
-            onClick={() => handleDownload(message.fileToDownload!)}
-            className="bg-brand/10 hover:bg-brand/20 text-brand text-xs px-3 py-1.5 rounded-full transition-colors flex items-center gap-1.5 font-semibold"
-          >
-            <DownloadIcon className="w-4 h-4" /> Tải xuống {message.fileToDownload!.name}
-          </button>
-        )}
-
-        {showOpenMindMapButton && (
-          <button
-            onClick={() => onOpenMindMap(message.mindMapData!)}
-            className="bg-brand/10 hover:bg-brand/20 text-brand text-xs px-3 py-1.5 rounded-full transition-colors flex items-center gap-1.5 font-semibold"
-          >
-            <MindMapIcon className="w-4 h-4" /> Mở sơ đồ tư duy
-          </button>
-        )}
-
-        {showOpenFlashcardsButton && onOpenFlashcards && (
-          <button
-            onClick={() => onOpenFlashcards(message.flashcards!)}
-            className="bg-brand/10 hover:bg-brand/20 text-brand text-xs px-3 py-1.5 rounded-full transition-colors flex items-center gap-1.5 font-semibold"
-          >
-            <FlashcardIcon className="w-4 h-4" /> Mở lại bộ thẻ
-          </button>
-        )}
-
-        {showApplyScheduleButton && onApplySchedule && (
-          <button
-            onClick={() => onApplySchedule(message.text)}
-            className="bg-brand/10 hover:bg-brand/20 text-brand text-xs px-3 py-1.5 rounded-full transition-colors flex items-center gap-1.5 font-semibold"
-          >
-            <BellPlusIcon className="w-4 h-4" /> Áp dụng lịch & Bật thông báo
-          </button>
-        )}
-
-        {showFollowUpActions && (
-          <>
-            <button 
-              onClick={() => onFollowUpClick(message.text, 'explain')}
-              className="bg-card-hover/60 hover:bg-card-hover text-text-secondary text-xs px-3 py-1.5 rounded-full transition-colors flex items-center gap-1.5"
-            >
-              🔁 Giải thích thêm
-            </button>
-            <button 
-              onClick={() => onFollowUpClick(message.text, 'example')}
-              className="bg-card-hover/60 hover:bg-card-hover text-text-secondary text-xs px-3 py-1.5 rounded-full transition-colors flex items-center gap-1.5"
-            >
-              ✍️ Tạo ví dụ tương tự
-            </button>
-            <button 
-              onClick={() => onFollowUpClick(message.text, 'summarize')}
-              className="bg-card-hover/60 hover:bg-card-hover text-text-secondary text-xs px-3 py-1.5 rounded-full transition-colors flex items-center gap-1.5"
-            >
-              📈 Tóm tắt ngắn lại
-            </button>
-          </>
-        )}
+          )}
+        </div>
       </div>
-    </div>
+    </>
   );
 };
 

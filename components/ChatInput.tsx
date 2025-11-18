@@ -1,9 +1,11 @@
 
+
+
 import React, { useState, useRef, useEffect } from 'react';
 import { SendIcon, AttachmentIcon, XIcon, MicrophoneIcon, FileIcon } from './Icons';
 
 interface ChatInputProps {
-  onSendMessage: (text: string, file: { name: string; data: string; mimeType: string } | null) => void;
+  onSendMessage: (text: string, files: { name: string; data: string; mimeType: string }[]) => void;
   isLoading: boolean;
   placeholder: string;
   featuresButton?: React.ReactNode;
@@ -19,8 +21,8 @@ declare global {
 
 const ChatInput: React.FC<ChatInputProps> = ({ onSendMessage, isLoading, placeholder, featuresButton }) => {
   const [text, setText] = useState('');
-  const [file, setFile] = useState<File | null>(null);
-  const [imagePreviewUrl, setImagePreviewUrl] = useState<string | null>(null);
+  const [files, setFiles] = useState<File[]>([]);
+  const [imagePreviewUrls, setImagePreviewUrls] = useState<string[]>([]);
   const [isListening, setIsListening] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const recognitionRef = useRef<any | null>(null);
@@ -71,47 +73,63 @@ const ChatInput: React.FC<ChatInputProps> = ({ onSendMessage, isLoading, placeho
     });
   };
 
-  const handleRemoveFile = () => {
-    if (imagePreviewUrl) {
-      URL.revokeObjectURL(imagePreviewUrl);
+  const handleRemoveFile = (indexToRemove: number) => {
+    const urlToRemove = imagePreviewUrls[indexToRemove];
+    if (urlToRemove && urlToRemove !== 'file_icon') {
+        URL.revokeObjectURL(urlToRemove);
     }
-    setFile(null);
-    setImagePreviewUrl(null);
-    if (fileInputRef.current) {
+    const newFiles = files.filter((_, index) => index !== indexToRemove);
+    const newUrls = imagePreviewUrls.filter((_, index) => index !== indexToRemove);
+    setFiles(newFiles);
+    setImagePreviewUrls(newUrls);
+    if (newFiles.length === 0 && fileInputRef.current) {
         fileInputRef.current.value = "";
     }
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if ((text.trim() || file) && !isLoading) {
-      let filePayload: { name: string; data: string; mimeType: string } | null = null;
-      if (file) {
-        const { data, mimeType } = await fileToBase64(file);
-        filePayload = { name: file.name, data, mimeType };
-      }
-      onSendMessage(text, filePayload);
+
+  const submitMessage = async () => {
+    if ((text.trim() || files.length > 0) && !isLoading) {
+      const filePayloads = await Promise.all(
+        files.map(async (file) => {
+          const { data, mimeType } = await fileToBase64(file);
+          return { name: file.name, data, mimeType };
+        })
+      );
+      onSendMessage(text, filePayloads);
       setText('');
-      handleRemoveFile();
+      // Clear all files
+      imagePreviewUrls.forEach(url => {
+        if (url !== 'file_icon') URL.revokeObjectURL(url);
+      });
+      setFiles([]);
+      setImagePreviewUrls([]);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
     }
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    submitMessage();
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      handleSubmit(e as unknown as React.FormEvent);
+      submitMessage();
     }
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const selectedFile = e.target.files?.[0];
-    if (selectedFile) {
-        setFile(selectedFile);
-        if (selectedFile.type.startsWith('image/')) {
-            setImagePreviewUrl(URL.createObjectURL(selectedFile));
-        } else {
-            setImagePreviewUrl(null);
-        }
+    const selectedFiles = e.target.files;
+    if (selectedFiles) {
+        const newFiles = Array.from(selectedFiles);
+        const newUrls = newFiles.map(file => file.type.startsWith('image/') ? URL.createObjectURL(file) : 'file_icon');
+        
+        setFiles(prev => [...prev, ...newFiles]);
+        setImagePreviewUrls(prev => [...prev, ...newUrls]);
     }
   };
 
@@ -125,30 +143,58 @@ const ChatInput: React.FC<ChatInputProps> = ({ onSendMessage, isLoading, placeho
     }
   };
 
+  const handlePaste = (event: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const items = event.clipboardData?.items;
+    if (!items) return;
+
+    const pastedFiles: File[] = [];
+    for (let i = 0; i < items.length; i++) {
+        if (items[i].type.startsWith('image/')) {
+            const file = items[i].getAsFile();
+            // FIX: Use `instanceof Blob` as a type guard. `getAsFile()` can return `null`,
+            // and this ensures `file` is a valid Blob object before its properties are accessed.
+            if (file instanceof Blob) {
+                const extension = file.type.split('/')[1] || 'png';
+                const imageFile = new File([file], `pasted-image-${Date.now()}-${i}.${extension}`, { type: file.type });
+                pastedFiles.push(imageFile);
+            }
+        }
+    }
+    
+    if (pastedFiles.length > 0) {
+        event.preventDefault();
+        const newImageUrls = pastedFiles.map(file => URL.createObjectURL(file));
+        setFiles(prev => [...prev, ...pastedFiles]);
+        setImagePreviewUrls(prev => [...prev, ...newImageUrls]);
+        event.currentTarget.focus();
+    }
+  };
+
 
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-2">
-      {file && (
-        <div className="relative w-full p-2 bg-input-bg rounded-lg border border-border flex items-center gap-3">
-            {imagePreviewUrl ? (
-                <img src={imagePreviewUrl} alt="Preview" className="w-16 h-16 object-cover rounded" />
-            ) : (
-                <div className="flex-shrink-0 w-16 h-16 bg-card rounded flex items-center justify-center">
-                    <FileIcon className="w-8 h-8 text-text-secondary" />
+      {files.length > 0 && (
+        <div className="w-full p-2 bg-input-bg rounded-lg border border-border flex flex-wrap gap-3">
+            {files.map((file, index) => (
+                <div key={`${file.name}-${index}`} className="relative w-24 h-24">
+                    {imagePreviewUrls[index] !== 'file_icon' ? (
+                        <img src={imagePreviewUrls[index]} alt="Preview" className="w-full h-full object-cover rounded" />
+                    ) : (
+                        <div className="w-full h-full bg-card rounded flex flex-col items-center justify-center p-1 text-center">
+                            <FileIcon className="w-8 h-8 text-text-secondary" />
+                            <span className="text-xs text-text-secondary mt-1 w-full truncate" title={file.name}>{file.name}</span>
+                        </div>
+                    )}
+                    <button 
+                        type="button" 
+                        onClick={() => handleRemoveFile(index)}
+                        className="absolute -top-1.5 -right-1.5 bg-card text-text-primary rounded-full p-0.5 hover:bg-card-hover border border-border"
+                        aria-label="Remove file"
+                    >
+                        <XIcon className="w-4 h-4" />
+                    </button>
                 </div>
-            )}
-            <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-text-primary truncate">{file.name}</p>
-                <p className="text-xs text-text-secondary">{Math.round(file.size / 1024)} KB</p>
-            </div>
-            <button 
-                type="button" 
-                onClick={handleRemoveFile}
-                className="absolute -top-2 -right-2 bg-card text-text-primary rounded-full p-1 hover:bg-card-hover border border-border"
-                aria-label="Remove file"
-            >
-                <XIcon className="w-4 h-4" />
-            </button>
+            ))}
         </div>
       )}
       <div className="flex items-center gap-3">
@@ -160,6 +206,7 @@ const ChatInput: React.FC<ChatInputProps> = ({ onSendMessage, isLoading, placeho
             accept="image/*,application/pdf,.doc,.docx,text/plain"
             className="hidden"
             id="file-upload"
+            multiple
         />
         <button
             type="button"
@@ -185,6 +232,7 @@ const ChatInput: React.FC<ChatInputProps> = ({ onSendMessage, isLoading, placeho
             value={text}
             onChange={(e) => setText(e.target.value)}
             onKeyDown={handleKeyDown}
+            onPaste={handlePaste}
             placeholder={placeholder}
             rows={1}
             disabled={isLoading}
@@ -193,8 +241,8 @@ const ChatInput: React.FC<ChatInputProps> = ({ onSendMessage, isLoading, placeho
         />
         <button
             type="submit"
-            disabled={isLoading || (!text.trim() && !file)}
-            className="bg-brand text-white p-3 rounded-full hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-background focus:ring-brand disabled:bg-slate-400 dark:disabled:bg-slate-600 disabled:cursor-not-allowed transition-colors duration-200"
+            disabled={isLoading || (!text.trim() && files.length === 0)}
+            className="bg-brand text-white p-3 rounded-full transform hover:opacity-90 hover:scale-110 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-background focus:ring-brand disabled:bg-slate-400 dark:disabled:bg-slate-600 disabled:cursor-not-allowed transition-all duration-200"
             aria-label="Gửi tin nhắn"
         >
             <SendIcon className="w-6 h-6" />

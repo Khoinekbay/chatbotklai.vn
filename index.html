@@ -25,6 +25,9 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&family=Lora:ital,wght@0,400;0,700;1,400&family=Roboto+Mono:wght@400;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+
     <style>
       :root {
         --background: #ffffff;
@@ -42,6 +45,14 @@
         --brand: #2563eb;
         --brand-secondary: #dbeafe;
         --table-border: #cbd5e1;
+        
+        /* RGB values for translucency */
+        --user-bubble-bg-rgb: 37, 99, 235;
+        --model-bubble-bg-rgb: 226, 232, 240;
+        --card-rgb: 255, 255, 255;
+        --sidebar-rgb: 241, 245, 249;
+        --background-rgb: 255, 255, 255;
+        --border-rgb: 226, 232, 240;
       }
       html.dark {
         --background: #0f172a;
@@ -59,6 +70,14 @@
         --brand: #3b82f6;
         --brand-secondary: #1e293b;
         --table-border: #475569;
+
+        /* RGB values for translucency */
+        --user-bubble-bg-rgb: 37, 99, 235;
+        --model-bubble-bg-rgb: 51, 65, 85;
+        --card-rgb: 30, 41, 59;
+        --sidebar-rgb: 2, 6, 23;
+        --background-rgb: 15, 23, 42;
+        --border-rgb: 51, 65, 85;
       }
       @keyframes slideInUp {
         from {
@@ -229,6 +248,192 @@
         opacity: 0;
         pointer-events: none;
       }
+
+      /* New Mind Map Styles */
+      .mindmap-node-body {
+        padding: 8px 14px;
+        border-radius: 8px;
+        background-color: var(--card);
+        border: 1px solid var(--border);
+        box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+        font-size: 14px;
+        line-height: 1.4;
+        transition: all 0.2s ease-out;
+        max-width: 180px;
+        word-wrap: break-word;
+        color: var(--text-primary);
+        outline: none;
+      }
+      html.dark .mindmap-node-body {
+        box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+      }
+      .mindmap-node-body:hover {
+        border-color: var(--brand);
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+      }
+      .mindmap-node-body.is-root {
+        background-color: var(--brand);
+        color: var(--user-bubble-text);
+        border-color: transparent;
+        font-weight: 600;
+        font-size: 16px;
+      }
+      .mindmap-node-body.is-editing {
+        border-color: var(--brand);
+        box-shadow: 0 0 0 3px var(--brand-secondary);
+        cursor: text;
+      }
+      .mindmap-node-body.is-selected {
+        border-color: var(--brand);
+        box-shadow: 0 0 0 3px var(--brand-secondary);
+      }
+      .mindmap-node-toggle-btn {
+        cursor: pointer;
+        fill: var(--text-secondary);
+        stroke: var(--background);
+        stroke-width: 2px;
+      }
+      .mindmap-node-toggle-btn:hover {
+        opacity: 0.8;
+      }
+
+      /* Mind Map Pan/Zoom Styles */
+      .mindmap-view g.node {
+        cursor: pointer;
+      }
+      .mindmap-view.is-panning {
+        cursor: grab;
+      }
+      .mindmap-view.is-panning.is-dragging {
+        cursor: grabbing;
+      }
+      .mindmap-view.is-panning g.node {
+        pointer-events: none;
+      }
+
+
+      /* Code Block Enhancements */
+      .code-block-wrapper {
+        position: relative;
+      }
+      .prose pre.is-collapsible {
+        max-height: 300px;
+        overflow: hidden;
+        transition: max-height 0.3s ease-in-out;
+        margin-bottom: 0 !important;
+        border-bottom-left-radius: 0;
+        border-bottom-right-radius: 0;
+      }
+      .show-more-button {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 100%;
+        padding: 0.5rem;
+        background-color: var(--sidebar);
+        border: 1px solid var(--border);
+        border-top: none;
+        border-bottom-left-radius: 0.5rem;
+        border-bottom-right-radius: 0.5rem;
+        cursor: pointer;
+        font-size: 0.875rem;
+        color: var(--text-secondary);
+        font-weight: 500;
+        transition: background-color 0.2s;
+      }
+      .show-more-button:hover {
+        background-color: var(--card-hover);
+      }
+      .show-more-button svg {
+        margin-right: 0.5rem;
+        transition: transform 0.3s ease-in-out;
+      }
+      .prose pre.is-expanded + .show-more-button svg {
+        transform: rotate(180deg);
+      }
+
+      /* Syntax Highlighting theme overrides for light/dark mode */
+      .hljs {
+        border-radius: 0.5rem;
+        padding: 1rem !important;
+        font-family: var(--font-mono, 'Roboto Mono', monospace);
+      }
+      /* Light theme overrides for atom-one-dark */
+      html:not(.dark) .hljs {
+        background: #f1f5f9; /* slate-100 */
+        color: #334155;     /* slate-700 */
+      }
+      html:not(.dark) .hljs-comment,
+      html:not(.dark) .hljs-quote {
+        color: #94a3b8; /* slate-400 */
+      }
+      html:not(.dark) .hljs-variable,
+      html:not(.dark) .hljs-template-variable,
+      html:not(.dark) .hljs-tag,
+      html:not(.dark) .hljs-name,
+      html:not(.dark) .hljs-selector-id,
+      html:not(.dark) .hljs-selector-class,
+      html:not(.dark) .hljs-regexp,
+      html:not(.dark) .hljs-deletion {
+        color: #dc2626; /* red-600 */
+      }
+      html:not(.dark) .hljs-number,
+      html:not(.dark) .hljs-built_in,
+      html:not(.dark) .hljs-literal,
+      html:not(.dark) .hljs-type,
+      html:not(.dark) .hljs-params,
+      html:not(.dark) .hljs-meta,
+      html:not(.dark) .hljs-link {
+        color: #f97316; /* orange-500 */
+      }
+      html:not(.dark) .hljs-attribute {
+        color: #d97706; /* amber-600 */
+      }
+      html:not(.dark) .hljs-string,
+      html:not(.dark) .hljs-symbol,
+      html:not(.dark) .hljs-bullet,
+      html:not(.dark) .hljs-addition {
+        color: #16a34a; /* green-600 */
+      }
+      html:not(.dark) .hljs-title,
+      html:not(.dark) .hljs-section {
+        color: #2563eb; /* blue-600 */
+      }
+      html:not(.dark) .hljs-keyword,
+      html:not(.dark) .hljs-selector-tag {
+        color: #9333ea; /* purple-600 */
+      }
+      html:not(.dark) .hljs-emphasis { font-style: italic; }
+      html:not(.dark) .hljs-strong { font-weight: bold; }
+
+      /* Styles for custom background */
+      body.has-custom-bg {
+        background-size: cover;
+        background-position: center;
+        background-attachment: fixed;
+        --background: transparent; /* Make main app background see-through */
+      }
+      .has-custom-bg .bg-sidebar {
+        background-color: rgba(var(--sidebar-rgb), 0.75) !important;
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
+      }
+      .has-custom-bg .bg-card\/80 { /* Header and Footer, escaped slash for tailwind */
+        background-color: rgba(var(--card-rgb), 0.6) !important;
+        backdrop-filter: blur(10px);
+        -webkit-backdrop-filter: blur(10px);
+      }
+      /* Chat Bubbles */
+      .has-custom-bg .bg-user-bubble-bg {
+        background-color: rgba(var(--user-bubble-bg-rgb), 0.85) !important;
+      }
+      .has-custom-bg .bg-model-bubble-bg {
+        background-color: rgba(var(--model-bubble-bg-rgb), 0.85) !important;
+      }
+      .has-custom-bg main {
+        background-color: transparent !important;
+      }
     </style>
     <script>
       tailwind.config = {
@@ -273,7 +478,8 @@
     "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/",
     "@google/genai": "https://aistudiocdn.com/@google/genai@^1.29.0",
     "react/": "https://aistudiocdn.com/react@^19.2.0/",
-    "react": "https://aistudiocdn.com/react@^19.2.0"
+    "react": "https://aistudiocdn.com/react@^19.2.0",
+    "react-dom": "https://aistudiocdn.com/react-dom@^19.2.0"
   }
 }
 </script>

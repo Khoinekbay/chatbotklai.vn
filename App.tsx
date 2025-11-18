@@ -1,10 +1,13 @@
+
+
+
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { GoogleGenAI, Chat, Part, Modality } from '@google/genai';
-import { type Message, type ChatSession, type User, type MindMapNode } from './types';
+import { type Message, type ChatSession, type User, type MindMapNode, type Mode } from './types';
 import ChatMessage from './components/ChatMessage';
 import ChatInput from './components/ChatInput';
 import TypingIndicator from './components/TypingIndicator';
-import { CreateExamIcon, SolveExamIcon, CreateScheduleIcon, NewChatIcon, KlAiLogo, UserIcon, LogoutIcon, EditIcon, SearchIcon, PinIcon, LearnModeIcon, ExamModeIcon, DownloadIcon, SunIcon, MoonIcon, TheoryModeIcon, MenuIcon, FeaturesIcon, FlashcardIcon, ShuffleIcon, CloneIcon, CalculatorIcon, PeriodicTableIcon, MinimizeIcon, MaximizeIcon, RestoreIcon, CreateFileIcon, MindMapIcon } from './components/Icons';
+import { CreateExamIcon, SolveExamIcon, CreateScheduleIcon, NewChatIcon, KlAiLogo, UserIcon, LogoutIcon, EditIcon, SearchIcon, PinIcon, LearnModeIcon, ExamModeIcon, DownloadIcon, SunIcon, MoonIcon, TheoryModeIcon, MenuIcon, FeaturesIcon, FlashcardIcon, ShuffleIcon, CloneIcon, CalculatorIcon, PeriodicTableIcon, MinimizeIcon, MaximizeIcon, RestoreIcon, CreateFileIcon, MindMapIcon, TrashIcon } from './components/Icons';
 import Auth from './components/Auth';
 import SettingsModal from './components/SettingsModal';
 import FlashcardView from './components/FlashcardView';
@@ -13,7 +16,6 @@ import PeriodicTable from './components/PeriodicTable';
 import ToolModal from './components/ToolModal';
 import MindMapModal from './components/MindMapModal';
 
-type Mode = 'chat' | 'create_exam' | 'solve_exam' | 'create_schedule' | 'learn' | 'exam' | 'theory' | 'flashcard' | 'scramble_exam' | 'similar_exam' | 'create_file' | 'mind_map';
 export type FollowUpAction = 'explain' | 'example' | 'summarize';
 
 const getSystemInstruction = (role: User['aiRole'] = 'assistant', tone: User['aiTone'] = 'balanced'): string => {
@@ -90,10 +92,15 @@ const parseMindMapFromResponse = (text: string): { intro: string, data: MindMapN
 
     let root: MindMapNode | null = null;
     const stack: { node: MindMapNode; indent: number }[] = [];
+    const topLevelNodes: MindMapNode[] = [];
+
 
     lines.forEach(line => {
         const indent = getIndent(line);
-        const name = line.trim().substring(2).trim();
+        // FIX: More robustly parse the name by removing the bullet point and trimming.
+        const name = line.trim().replace(/^[-*]\s*/, '').trim();
+        if (!name) return; // Skip lines that are just a bullet point
+
         const newNode: MindMapNode = { name, children: [] };
 
         while (stack.length > 0 && stack[stack.length - 1].indent >= indent) {
@@ -107,19 +114,30 @@ const parseMindMapFromResponse = (text: string): { intro: string, data: MindMapN
             }
             parent.children.push(newNode);
         } else {
-            root = newNode;
+            // FIX: Collect all top-level nodes instead of overwriting a single root.
+            topLevelNodes.push(newNode);
         }
 
         stack.push({ node: newNode, indent });
     });
+    
+    // FIX: Handle the collected top-level nodes.
+    if (topLevelNodes.length === 1) {
+        // If there's only one root node, use it directly.
+        root = topLevelNodes[0];
+    } else if (topLevelNodes.length > 1) {
+        // If there are multiple root nodes, create a new parent node for them.
+        // Use the last line of the intro as a plausible title, or a default.
+        const mainTopicFromIntro = intro.split('\n').pop()?.replace(/[:.]$/, '').trim() || 'Sơ đồ tư duy';
+        root = { name: mainTopicFromIntro, children: topLevelNodes };
+    }
 
     return { intro, data: root };
 };
 
 
 const App: React.FC = () => {
-  const [currentUser, setCurrentUser] = useState<string | null>(null);
-  const [currentUserData, setCurrentUserData] = useState<User | null>(null);
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [chatSessions, setChatSessions] = useState<ChatSession[]>([]);
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
   const [editingChatId, setEditingChatId] = useState<string | null>(null);
@@ -135,6 +153,7 @@ const App: React.FC = () => {
   const [mindMapModalData, setMindMapModalData] = useState<MindMapNode | null>(null);
   const [isCalculatorOpen, setIsCalculatorOpen] = useState(false);
   const [isPeriodicTableOpen, setIsPeriodicTableOpen] = useState(false);
+  const [isAuthenticating, setIsAuthenticating] = useState(true);
 
 
   const chatInstances = useRef<{ [key: string]: Chat }>({});
@@ -145,9 +164,9 @@ const App: React.FC = () => {
   
   // Theme management
   useEffect(() => {
-    const savedTheme = currentUserData?.theme || localStorage.getItem('kl-ai-theme') as 'light' | 'dark' || 'light';
+    const savedTheme = currentUser?.theme || localStorage.getItem('kl-ai-theme') as 'light' | 'dark' || 'light';
     setTheme(savedTheme);
-  }, [currentUserData]);
+  }, [currentUser]);
   
   useEffect(() => {
     if (theme === 'dark') {
@@ -158,66 +177,105 @@ const App: React.FC = () => {
     localStorage.setItem('kl-ai-theme', theme);
   }, [theme]);
 
+  // Custom Background Management
+  useEffect(() => {
+    if (currentUser?.backgroundUrl) {
+      document.body.style.backgroundImage = `url(${currentUser.backgroundUrl})`;
+      document.body.classList.add('has-custom-bg');
+    } else {
+      document.body.style.backgroundImage = 'none';
+      document.body.classList.remove('has-custom-bg');
+    }
+    // Cleanup function to remove styles when component unmounts or user changes
+    return () => {
+      document.body.style.backgroundImage = 'none';
+      document.body.classList.remove('has-custom-bg');
+    };
+  }, [currentUser?.backgroundUrl]);
+
   // Check for logged in user on mount
   useEffect(() => {
-    const loggedInUser = localStorage.getItem('kl-ai-currentUser');
-    if (loggedInUser) {
-      setCurrentUser(loggedInUser);
-    }
+    const verifyToken = async () => {
+        const token = localStorage.getItem('kl-ai-token');
+        if (token) {
+            try {
+                // Trong ứng dụng thật, đây sẽ là endpoint backend của bạn để xác thực token
+                // const response = await fetch('/api/user/me', {
+                //     headers: { 'Authorization': `Bearer ${token}` }
+                // });
+                // if (!response.ok) throw new Error('Token không hợp lệ');
+                // const userData = await response.json();
+                
+                // ===================================================================
+                // MOCK API CALL - Thay thế bằng API call thật đến backend của bạn
+                // ===================================================================
+                await new Promise(res => setTimeout(res, 500)); // Giả lập độ trễ mạng
+                const mockUserData: User = { 
+                    username: 'demo_user', 
+                    password: '', // Client không bao giờ lưu mật khẩu
+                    aiRole: 'assistant', 
+                    aiTone: 'balanced',
+                    theme: 'dark'
+                };
+                setCurrentUser(mockUserData);
+                // ===================================================================
+
+            } catch (error) {
+                console.error("Xác thực token thất bại", error);
+                handleLogout(); // Xóa token không hợp lệ
+            }
+        }
+        setIsAuthenticating(false);
+    };
+    verifyToken();
   }, []);
   
-  // Load user data when currentUser changes
-  useEffect(() => {
-    if (currentUser) {
-      const users: User[] = JSON.parse(localStorage.getItem('kl-ai-users') || '[]');
-      const userData = users.find(u => u.username === currentUser);
-      setCurrentUserData(userData || null);
-    } else {
-      setCurrentUserData(null);
-    }
-  }, [currentUser]);
-
   // Apply user's font preference
   useEffect(() => {
     const defaultFont = "'Inter', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, 'Noto Sans', sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji'";
-    document.body.style.fontFamily = currentUserData?.fontPreference || defaultFont;
-  }, [currentUserData?.fontPreference]);
+    document.body.style.fontFamily = currentUser?.fontPreference || defaultFont;
+  }, [currentUser?.fontPreference]);
 
-  // Load chats from localStorage when user logs in
+  // Load chats from backend when user logs in
   useEffect(() => {
     if (!currentUser) return;
-    try {
-      const savedChats = localStorage.getItem(`kl-ai-chats-${currentUser}`);
-      if (savedChats) {
-        const parsedChats: ChatSession[] = JSON.parse(savedChats);
-        if (parsedChats.length > 0) {
-          setChatSessions(parsedChats);
-          const firstChat = parsedChats.find(p => !p.isPinned) || parsedChats[0];
-          setActiveChatId(firstChat.id);
-        } else {
-          handleNewChat();
+    const fetchChats = async () => {
+        try {
+            // const token = localStorage.getItem('kl-ai-token');
+            // const response = await fetch('/api/chats', {
+            //     headers: { 'Authorization': `Bearer ${token}` }
+            // });
+            // if (!response.ok) throw new Error('Failed to fetch chats');
+            // const chats = await response.json();
+
+            // ===================================================================
+            // MOCK API CALL - Thay thế bằng API call thật đến backend của bạn
+            // ===================================================================
+            await new Promise(res => setTimeout(res, 500));
+            const mockChats: ChatSession[] = []; // Bắt đầu không có chat để trải nghiệm sạch hơn
+            // ===================================================================
+
+            if (mockChats.length > 0) {
+                setChatSessions(mockChats);
+                const firstChat = mockChats.find(p => !p.isPinned) || mockChats[0];
+                setActiveChatId(firstChat.id);
+            } else {
+                handleNewChat(); // Tự động tạo chat mới nếu không có chat nào
+            }
+        } catch (e) {
+            console.error("Không thể tải các cuộc trò chuyện từ máy chủ", e);
+            setError("Không thể tải các đoạn chat.");
         }
-      } else {
-        handleNewChat();
-      }
-    } catch (e) {
-      console.error("Failed to load chats from localStorage", e);
-      handleNewChat();
-    }
+    };
+    fetchChats();
   }, [currentUser]);
 
-  // Save chats to localStorage whenever they change for the current user
-  useEffect(() => {
-    if (currentUser && chatSessions.length > 0) {
-      localStorage.setItem(`kl-ai-chats-${currentUser}`, JSON.stringify(chatSessions));
-    }
-  }, [chatSessions, currentUser]);
   
   // Initialize or re-initialize chat instances when sessions or user settings change
   useEffect(() => {
     if (!currentUser) return;
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
-    const systemInstruction = getSystemInstruction(currentUserData?.aiRole, currentUserData?.aiTone);
+    const systemInstruction = getSystemInstruction(currentUser?.aiRole, currentUser?.aiTone);
     
     chatSessions.forEach(session => {
         const chatHistory = session.messages
@@ -233,11 +291,14 @@ const App: React.FC = () => {
             history: historyWithoutWelcome,
         });
     });
-  }, [chatSessions, currentUser, currentUserData?.aiRole, currentUserData?.aiTone]);
+  }, [chatSessions, currentUser, currentUser?.aiRole, currentUser?.aiTone]);
 
   useEffect(() => {
     if (chatContainerRef.current) {
-      chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
+      chatContainerRef.current.scrollTo({
+        top: chatContainerRef.current.scrollHeight,
+        behavior: 'smooth'
+      });
     }
   }, [chatSessions, activeChatId, isLoading]);
 
@@ -260,42 +321,71 @@ const App: React.FC = () => {
     };
   }, []);
 
-  const handleNewChat = useCallback(() => {
+  const handleNewChat = useCallback(async () => {
     if (!currentUser) return;
-    const newId = Date.now().toString();
-    const newChat: ChatSession = {
-      id: newId,
-      title: 'Đoạn chat mới',
-      messages: [{ role: 'model', text: "Xin chào! Tôi là KL AI, trợ lý ảo của bạn. Tôi có thể giúp gì cho bạn hôm nay?" }],
-      isPinned: false,
-    };
+    
+    let newChat: ChatSession;
+    try {
+        // Trong ứng dụng thật, bạn sẽ gửi yêu cầu POST đến backend để tạo chat mới
+        // const token = localStorage.getItem('kl-ai-token');
+        // const response = await fetch('/api/chats', { 
+        //    method: 'POST', 
+        //    headers: { 'Authorization': `Bearer ${token}` } 
+        // });
+        // if (!response.ok) throw new Error('Failed to create chat');
+        // newChat = await response.json();
+    
+        // ===================================================================
+        // MOCK API CALL - Thay thế bằng API call thật đến backend của bạn
+        // ===================================================================
+        const newId = Date.now().toString();
+        newChat = {
+          id: newId,
+          title: 'Đoạn chat mới',
+          messages: [{ role: 'model', text: "Xin chào! Tôi là KL AI, trợ lý ảo của bạn. Tôi có thể giúp gì cho bạn hôm nay?" }],
+          isPinned: false,
+        };
+        // ===================================================================
+    } catch (error) {
+        console.error("Không thể tạo cuộc trò chuyện mới:", error);
+        setError("Không thể tạo cuộc trò chuyện mới. Vui lòng thử lại.");
+        return;
+    }
+
+
     setChatSessions(prev => [newChat, ...prev]);
-    setActiveChatId(newId);
+    setActiveChatId(newChat.id);
     setIsMobileSidebarOpen(false);
     
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
-    const systemInstruction = getSystemInstruction(currentUserData?.aiRole, currentUserData?.aiTone);
-    chatInstances.current[newId] = ai.chats.create({
+    const systemInstruction = getSystemInstruction(currentUser?.aiRole, currentUser?.aiTone);
+    chatInstances.current[newChat.id] = ai.chats.create({
         model: 'gemini-2.5-flash',
         config: { systemInstruction },
     });
-  }, [currentUser, currentUserData]);
+  }, [currentUser]);
 
-  const handleSendMessage = useCallback(async (text: string, file: { name: string; data: string; mimeType: string } | null = null) => {
+  const handleSendMessage = useCallback(async (text: string, files: { name: string; data: string; mimeType: string }[] = []) => {
     if (!activeChatId || isLoading) return;
     if (!chatInstances.current[activeChatId]) return;
-    if (!text.trim() && !file) return;
+    if (!text.trim() && files.length === 0) return;
 
-    const userMessage: Message = { 
-        role: 'user', 
-        text, 
-        file: file ? { name: file.name, dataUrl: `data:${file.mimeType};base64,${file.data}`, mimeType: file.mimeType } : undefined 
+    const userMessage: Message = {
+        role: 'user',
+        text,
+        timestamp: new Date().toISOString(),
+        files: files.map(file => ({
+            name: file.name,
+            dataUrl: `data:${file.mimeType};base64,${file.data}`,
+            mimeType: file.mimeType
+        })),
+        mode: mode,
     };
 
     setChatSessions(prev =>
         prev.map(chat =>
             chat.id === activeChatId
-                ? { ...chat, messages: [...chat.messages, userMessage, { role: 'model', text: '' }] }
+                ? { ...chat, messages: [...chat.messages, userMessage, { role: 'model', text: '', timestamp: new Date().toISOString() }] }
                 : chat
         )
     );
@@ -314,11 +404,18 @@ const App: React.FC = () => {
                 const titleResponse = await ai.models.generateContent({ model: 'gemini-2.5-flash', contents: titleGenPrompt });
                 let newTitle = titleResponse.text.trim().replace(/^"|"$/g, '');
                 if (newTitle) {
+                    // Gửi tiêu đề mới này đến backend để lưu lại
+                    // const token = localStorage.getItem('kl-ai-token');
+                    // await fetch(`/api/chats/${activeChatId}`, { 
+                    //    method: 'PATCH',
+                    //    headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+                    //    body: JSON.stringify({ title: newTitle }) 
+                    // });
                     setChatSessions(prev =>
                         prev.map(chat => chat.id === activeChatId ? { ...chat, title: newTitle } : chat)
                     );
                 }
-            } catch (titleError) { console.error("Failed to generate chat title:", titleError); }
+            } catch (titleError) { console.error("Không thể tạo tiêu đề cho cuộc trò chuyện:", titleError); }
         }
     };
     
@@ -326,12 +423,18 @@ const App: React.FC = () => {
         console.error(e);
         const errorMessage = e instanceof Error ? e.message : 'Đã xảy ra lỗi không xác định.';
         setError(`Không thể nhận phản hồi. ${errorMessage}`);
-        const errorText = "Xin lỗi, tôi đã gặp lỗi và không thể xử lý yêu cầu của bạn. Vui lòng thử lại.";
+        
+        const errorText = `**Rất tiếc, đã có lỗi xảy ra.**\n\nTôi không thể xử lý yêu cầu của bạn lúc này.\n\n**Bạn có thể thử:**\n- Kiểm tra lại kết nối mạng của bạn.\n- Gửi lại yêu cầu sau ít phút.\n- Nếu bạn đang tải tệp lên, hãy đảm bảo tệp không bị hỏng và có định dạng được hỗ trợ (ảnh, pdf, docx, txt).\n- Bắt đầu một cuộc trò chuyện mới để thử lại.\n\n*Nếu sự cố vẫn tiếp diễn, vui lòng liên hệ bộ phận hỗ trợ.*`;
+
         setChatSessions(prev =>
             prev.map(chat => {
                 if (chat.id === activeChatId) {
                     const updatedMessages = [...chat.messages];
-                    updatedMessages[updatedMessages.length - 1].text = errorText;
+                    const lastMessage = updatedMessages[updatedMessages.length - 1];
+                    if (lastMessage && lastMessage.role === 'model') {
+                        lastMessage.text = errorText;
+                        lastMessage.isError = true;
+                    }
                     return { ...chat, messages: updatedMessages };
                 }
                 return chat;
@@ -359,11 +462,13 @@ const App: React.FC = () => {
       case 'create_file': prompt = `Với vai trò là một trợ lý soạn thảo văn bản, hãy tạo nội dung cho một tệp dựa trên yêu cầu sau. Chỉ trả về nội dung của tệp, không thêm lời chào hay giải thích gì thêm. Yêu cầu: ${text}`; break;
       case 'mind_map': prompt = `Với vai trò là một chuyên gia tư duy trực quan, hãy tạo một sơ đồ tư duy chi tiết về chủ đề sau. Sử dụng định dạng danh sách lồng nhau (nested list) trong Markdown để biểu thị các nhánh, bắt đầu bằng dấu gạch đầu dòng (-). Chủ đề: ${text}`; break;
     }
-    if (file && !prompt) prompt = "Phân tích và giải bài tập trong tệp này.";
+    if (files.length > 0 && !prompt) prompt = "Phân tích và giải bài tập trong các tệp này.";
 
     try {
         const messageParts: (string | Part)[] = [];
-        if (file) messageParts.push({ inlineData: { data: file.data, mimeType: file.mimeType } });
+        files.forEach(file => {
+            messageParts.push({ inlineData: { data: file.data, mimeType: file.mimeType } });
+        });
         messageParts.push({ text: prompt });
 
         const stream = await chatInstances.current[activeChatId].sendMessageStream({ message: messageParts });
@@ -382,7 +487,19 @@ const App: React.FC = () => {
                 })
             );
         }
-        await generateTitleIfNeeded(text || (file ? `Tệp: ${file.name}` : ""));
+        
+        // Sau khi có phản hồi, gửi cả tin nhắn người dùng và tin nhắn của model lên backend để lưu trữ
+        // const token = localStorage.getItem('kl-ai-token');
+        // await fetch(`/api/chats/${activeChatId}/messages`, { 
+        //    method: 'POST', 
+        //    headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+        //    body: JSON.stringify({ 
+        //        userMessage, 
+        //        modelResponse: { role: 'model', text: fullResponseText, timestamp: new Date().toISOString() }
+        //    }) 
+        // });
+        
+        await generateTitleIfNeeded(text || (files.length > 0 ? `Tệp: ${files.map(f => f.name).join(', ')}` : ""));
 
         if (mode === 'flashcard') {
             const parsedData = parseFlashcardsFromResponse(fullResponseText);
@@ -442,14 +559,14 @@ const App: React.FC = () => {
         }
 
         if (mode === 'mind_map') {
-            const { intro, data } = parseMindMapFromResponse(fullResponseText);
+            const { data } = parseMindMapFromResponse(fullResponseText);
             if (data) {
                 setChatSessions(prev =>
                     prev.map(chat => {
                         if (chat.id === activeChatId) {
                             const updatedMessages = [...chat.messages];
                             const lastMessage = updatedMessages[updatedMessages.length - 1];
-                            lastMessage.text = intro || "Sơ đồ tư duy của bạn đã sẵn sàng. Hãy nhấp vào nút bên dưới để mở.";
+                            lastMessage.text = "Sơ đồ tư duy của bạn đã sẵn sàng. Nhấp vào nút bên dưới để mở.";
                             lastMessage.mindMapData = data;
                             return { ...chat, messages: updatedMessages };
                         }
@@ -467,6 +584,125 @@ const App: React.FC = () => {
     }
 }, [activeChatId, mode, currentUser, chatSessions, isLoading]);
 
+const handleRegenerateResponse = useCallback(async () => {
+    if (!activeChatId || isLoading || !currentUser) return;
+    const chat = chatSessions.find(c => c.id === activeChatId);
+    if (!chat) return;
+
+    const lastUserMessage = [...chat.messages].reverse().find(m => m.role === 'user');
+    if (!lastUserMessage) return;
+
+    // Remove the last model's response and add a new blank placeholder
+    setChatSessions(prev =>
+        prev.map(c => {
+            if (c.id === activeChatId) {
+                const messagesWithoutLastModel = c.messages.slice(0, -1);
+                return { ...c, messages: [...messagesWithoutLastModel, { role: 'model', text: '', timestamp: new Date().toISOString() }] };
+            }
+            return c;
+        })
+    );
+    
+    setIsLoading(true);
+    setError(null);
+    setFlashcardData(null);
+
+    const handleError = (e: any) => { /* ... error handling logic copied from handleSendMessage ... */ };
+    
+    try {
+        const text = lastUserMessage.text;
+        const files = lastUserMessage.files?.map(f => ({
+            name: f.name,
+            data: f.dataUrl.split(',')[1],
+            mimeType: f.mimeType
+        })) || [];
+        const lastMode = lastUserMessage.mode || 'chat';
+
+        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
+        const systemInstruction = getSystemInstruction(currentUser.aiRole, currentUser.aiTone);
+
+        const historyUpToLastUser = chat.messages
+            .slice(0, -1) // Exclude the old model response we're replacing
+            .filter(m => m.text || (m.files && m.files.length > 0))
+            .map(m => ({
+                role: m.role,
+                parts: [{ text: m.text }] // Note: History doesn't support files, model relies on text context
+            }));
+        const historyWithoutWelcome = historyUpToLastUser.slice(1);
+        
+        chatInstances.current[activeChatId] = ai.chats.create({
+            model: 'gemini-2.5-flash',
+            config: { systemInstruction },
+            history: historyWithoutWelcome,
+        });
+
+        const messageParts: (string | Part)[] = [];
+        files.forEach(file => {
+            messageParts.push({ inlineData: { data: file.data, mimeType: file.mimeType } });
+        });
+        messageParts.push({ text });
+
+        const stream = await chatInstances.current[activeChatId].sendMessageStream({ message: messageParts });
+        
+        let fullResponseText = '';
+        for await (const chunk of stream) {
+            fullResponseText += chunk.text;
+            setChatSessions(prev =>
+                prev.map(c => {
+                    if (c.id === activeChatId) {
+                        const updatedMessages = [...c.messages];
+                        updatedMessages[updatedMessages.length - 1].text = fullResponseText;
+                        return { ...c, messages: updatedMessages };
+                    }
+                    return c;
+                })
+            );
+        }
+        
+        // Re-run post-processing based on the original mode
+        if (lastMode === 'flashcard') {
+            const parsedData = parseFlashcardsFromResponse(fullResponseText);
+            if (parsedData) {
+                setChatSessions(prev =>
+                    prev.map(chat => {
+                        if (chat.id === activeChatId) {
+                            const updatedMessages = [...chat.messages];
+                            const lastMessage = updatedMessages[updatedMessages.length - 1];
+                            lastMessage.text = parsedData.intro.trim() || "Đây là bộ flashcard của bạn. Hãy nhấp vào để bắt đầu học!";
+                            lastMessage.flashcards = parsedData.cards;
+                            return { ...chat, messages: updatedMessages };
+                        }
+                        return chat;
+                    })
+                );
+                setFlashcardData(parsedData.cards);
+            }
+        }
+        if (lastMode === 'mind_map') {
+             const { data } = parseMindMapFromResponse(fullResponseText);
+            if (data) {
+                setChatSessions(prev =>
+                    prev.map(chat => {
+                        if (chat.id === activeChatId) {
+                            const updatedMessages = [...chat.messages];
+                            const lastMessage = updatedMessages[updatedMessages.length - 1];
+                            lastMessage.text = "Sơ đồ tư duy của bạn đã sẵn sàng. Nhấp vào nút bên dưới để mở.";
+                            lastMessage.mindMapData = data;
+                            return { ...chat, messages: updatedMessages };
+                        }
+                        return chat;
+                    })
+                );
+            }
+        }
+        // ... add other mode post-processing if needed ...
+
+    } catch (e) {
+        handleError(e);
+    } finally {
+        setIsLoading(false);
+    }
+}, [activeChatId, isLoading, chatSessions, currentUser]);
 
   const handleFollowUpClick = (originalText: string, action: FollowUpAction) => {
     if (isLoading) return;
@@ -476,6 +712,12 @@ const App: React.FC = () => {
       case 'example': prompt = `Hãy tạo một ví dụ tương tự hoặc liên quan đến nội dung sau: "${originalText}"`; break;
       case 'summarize': prompt = `Hãy tóm tắt ngắn gọn lại nội dung sau: "${originalText}"`; break;
     }
+    handleSendMessage(prompt);
+  };
+
+  const handleAskSelection = (selectedText: string) => {
+    if (isLoading) return;
+    const prompt = `Hãy giải thích hoặc làm rõ hơn về phần này: "${selectedText}"`;
     handleSendMessage(prompt);
   };
 
@@ -552,12 +794,12 @@ const App: React.FC = () => {
     const chat = chatSessions.find(c => c.id === activeChatId);
     if (!chat) return;
     const content = chat.messages.map(msg => {
-        const fileMarkdown = msg.file
-        ? msg.file.mimeType.startsWith('image/')
-            ? `![Tệp đính kèm: ${msg.file.name}](${msg.file.dataUrl})\n\n`
-            : `\n[Tệp đính kèm: ${msg.file.name}]\n\n`
-        : '';
-        return `## ${msg.role === 'user' ? 'You' : 'KL AI'}\n\n${fileMarkdown}${msg.text}\n\n---\n`;
+        const filesMarkdown = msg.files?.map(file =>
+            file.mimeType.startsWith('image/')
+                ? `![Tệp đính kèm: ${file.name}](${file.dataUrl})\n\n`
+                : `\n[Tệp đính kèm: ${file.name}]\n\n`
+        ).join('') || '';
+        return `## ${msg.role === 'user' ? 'You' : 'KL AI'}\n\n${filesMarkdown}${msg.text}\n\n---\n`;
     }).join('');
     const blob = new Blob([content], { type: 'text/markdown;charset=utf-8' });
     const url = URL.createObjectURL(blob);
@@ -570,27 +812,48 @@ const App: React.FC = () => {
     URL.revokeObjectURL(url);
   };
 
-  const handleAuthSuccess = (username: string) => {
-    localStorage.setItem('kl-ai-currentUser', username);
-    setCurrentUser(username);
+  const handleAuthSuccess = (user: User, token: string) => {
+    localStorage.setItem('kl-ai-token', token);
+    setCurrentUser(user);
     setChatSessions([]);
     setActiveChatId(null);
   };
 
   const handleLogout = () => {
-    localStorage.removeItem('kl-ai-currentUser');
+    localStorage.removeItem('kl-ai-token');
     setCurrentUser(null);
     setChatSessions([]);
     setActiveChatId(null);
     chatInstances.current = {};
   };
 
-  const handleUpdateUser = (updatedUser: User) => {
-    setCurrentUserData(updatedUser);
-    if(updatedUser.theme) setTheme(updatedUser.theme)
-    const users: User[] = JSON.parse(localStorage.getItem('kl-ai-users') || '[]');
-    const updatedUsers = users.map(u => u.username === updatedUser.username ? updatedUser : u);
-    localStorage.setItem('kl-ai-users', JSON.stringify(updatedUsers));
+  const handleUpdateUser = async (updatedUser: Partial<User>) => {
+    if (!currentUser) return;
+    try {
+        const token = localStorage.getItem('kl-ai-token');
+        // const response = await fetch('/api/user/me', {
+        //     method: 'PUT',
+        //     headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+        //     body: JSON.stringify(updatedUser),
+        // });
+        // if (!response.ok) throw new Error('Không thể cập nhật người dùng');
+        // const returnedUser = await response.json();
+        
+        // ===================================================================
+        // MOCK API CALL - Thay thế bằng API call thật đến backend của bạn
+        // ===================================================================
+        await new Promise(res => setTimeout(res, 300));
+        const returnedUser = { ...currentUser, ...updatedUser };
+        // ===================================================================
+
+        setCurrentUser(returnedUser);
+        if(returnedUser.theme) setTheme(returnedUser.theme);
+        return true; // Báo hiệu thành công
+    } catch (err) {
+        console.error("Không thể cập nhật người dùng", err);
+        setError("Không thể cập nhật thông tin tài khoản.");
+        return false; // Báo hiệu thất bại
+    }
   };
   
   const getPlaceholder = (): string => {
@@ -616,16 +879,83 @@ const App: React.FC = () => {
   }
   const handleRenameChat = (chatId: string, newTitle: string) => {
     const trimmedTitle = newTitle.trim();
-    if (trimmedTitle) setChatSessions(prev => prev.map(s => s.id === chatId ? { ...s, title: trimmedTitle } : s));
+    if (trimmedTitle) {
+      // Gọi API để cập nhật tiêu đề trên backend
+      // const token = localStorage.getItem('kl-ai-token');
+      // fetch(`/api/chats/${chatId}`, { 
+      //    method: 'PATCH',
+      //    headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+      //    body: JSON.stringify({ title: trimmedTitle }) 
+      // });
+      setChatSessions(prev => prev.map(s => s.id === chatId ? { ...s, title: trimmedTitle } : s));
+    }
     setEditingChatId(null);
   };
-  const handleTogglePinChat = (chatId: string) => setChatSessions(prev => prev.map(s => s.id === chatId ? { ...s, isPinned: !s.isPinned } : s));
+
+  const handleDeleteChat = (chatId: string) => {
+    if (!window.confirm("Bạn có chắc chắn muốn xóa cuộc trò chuyện này? Hành động này không thể hoàn tác.")) {
+        return;
+    }
+    // In real app, send DELETE request to backend
+    // const token = localStorage.getItem('kl-ai-token');
+    // fetch(`/api/chats/${chatId}`, { method: 'DELETE', headers: { 'Authorization': `Bearer ${token}` } });
+    
+    setChatSessions(prevSessions => {
+        const sessionIndex = prevSessions.findIndex(s => s.id === chatId);
+        if (sessionIndex === -1) return prevSessions;
+
+        const remainingSessions = prevSessions.filter(s => s.id !== chatId);
+
+        if (activeChatId === chatId) {
+            if (remainingSessions.length > 0) {
+                // Select the chat at the same index if possible, otherwise the previous one
+                const newIndex = Math.min(sessionIndex, remainingSessions.length - 1);
+                setActiveChatId(remainingSessions[newIndex].id);
+            } else {
+                setActiveChatId(null);
+            }
+        }
+        
+        delete chatInstances.current[chatId];
+        return remainingSessions;
+    });
+  };
+
+  const handleTogglePinChat = (chatId: string) => {
+    // Gọi API để thay đổi trạng thái ghim trên backend
+    // const token = localStorage.getItem('kl-ai-token');
+    // fetch(`/api/chats/${chatId}/pin`, { 
+    //    method: 'POST',
+    //    headers: { 'Authorization': `Bearer ${token}` }
+    // });
+    setChatSessions(prev => prev.map(s => s.id === chatId ? { ...s, isPinned: !s.isPinned } : s));
+  };
   const handleThemeToggle = () => setTheme(prev => (prev === 'light' ? 'dark' : 'light'));
   const handleOpenFlashcards = (cards: { term: string; definition: string }[]) => {
     setFlashcardData(cards);
   };
   const handleOpenMindMap = (data: MindMapNode) => {
     setMindMapModalData(data);
+  };
+  const handleCreateNewMindMap = (data: MindMapNode) => {
+    if (!activeChatId) return;
+
+    const modelMessage: Message = {
+        role: 'model',
+        text: "Đây là sơ đồ tư duy mới được tách ra từ sơ đồ trước.",
+        timestamp: new Date().toISOString(),
+        mindMapData: data,
+    };
+
+    setChatSessions(prev =>
+        prev.map(chat =>
+            chat.id === activeChatId
+                ? { ...chat, messages: [...chat.messages, modelMessage] }
+                : chat
+        )
+    );
+    
+    setMindMapModalData(null);
   };
 
   const ModeButton: React.FC<{ targetMode: Mode; icon: React.ReactNode; label: string }> = ({ targetMode, icon, label }) => (
@@ -667,21 +997,30 @@ const App: React.FC = () => {
           >
             {session.title}
           </button>
-          <div className="absolute right-1 flex items-center opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
-            <button onClick={() => handleTogglePinChat(session.id)} className={`p-1.5 rounded-md ${session.isPinned ? 'text-amber-400 hover:text-amber-300' : 'text-text-secondary hover:text-text-primary'}`} aria-label={session.isPinned ? "Bỏ ghim" : "Ghim"}> <PinIcon className={`w-4 h-4 ${session.isPinned ? 'fill-amber-400' : ''}`} /> </button>
-            <button onClick={() => setEditingChatId(session.id)} className="p-1.5 text-text-secondary hover:text-text-primary" aria-label="Đổi tên"> <EditIcon className="w-4 h-4" /> </button>
+          <div className="absolute right-1 flex items-center opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity bg-sidebar/80 rounded-full">
+            <button onClick={() => handleTogglePinChat(session.id)} className={`p-1.5 rounded-md ${session.isPinned ? 'text-amber-400 hover:text-amber-300' : 'text-text-secondary hover:text-text-primary'}`} aria-label={session.isPinned ? "Bỏ ghim" : "Ghim"} title={session.isPinned ? "Bỏ ghim" : "Ghim"}> <PinIcon className={`w-4 h-4 ${session.isPinned ? 'fill-amber-400' : ''}`} /> </button>
+            <button onClick={() => setEditingChatId(session.id)} className="p-1.5 text-text-secondary hover:text-text-primary" aria-label="Đổi tên" title="Đổi tên"> <EditIcon className="w-4 h-4" /> </button>
+            <button onClick={() => handleDeleteChat(session.id)} className="p-1.5 text-text-secondary hover:text-red-500" aria-label="Xóa đoạn chat" title="Xóa đoạn chat"> <TrashIcon className="w-4 h-4" /> </button>
           </div>
         </div>
       )}
     </div>
   );
 
+  if (isAuthenticating) {
+    return (
+        <div className="flex h-screen w-screen items-center justify-center bg-background">
+            <KlAiLogo className="w-40 text-text-primary animate-pulse" />
+        </div>
+    );
+  }
+  
   if (!currentUser) return <Auth onAuthSuccess={handleAuthSuccess} />;
 
   const filteredSessions = chatSessions.filter(s => s.title.toLowerCase().includes(searchQuery.toLowerCase()));
   const pinnedChats = filteredSessions.filter(s => s.isPinned);
   const unpinnedChats = filteredSessions.filter(s => !s.isPinned);
-  const isLastMessageEmpty = !activeChat?.messages[activeChat.messages.length - 1]?.text && !activeChat?.messages[activeChat.messages.length - 1]?.file;
+  const isLastMessageEmpty = !activeChat?.messages[activeChat.messages.length - 1]?.text && (!activeChat?.messages[activeChat.messages.length - 1]?.files || activeChat?.messages[activeChat.messages.length - 1]?.files!.length === 0);
 
 
   const SidebarContent = () => (
@@ -693,14 +1032,40 @@ const App: React.FC = () => {
           <input type="text" placeholder="Tìm kiếm..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="w-full bg-card border border-border rounded-lg py-2 pl-9 pr-3 text-sm text-text-primary placeholder-text-secondary focus:outline-none focus:ring-2 focus:ring-brand" />
       </div>
       <div className="flex-1 overflow-y-auto pr-1">
-          {pinnedChats.length > 0 && (
-            <div className="mb-4">
-              <h2 className="text-xs font-semibold text-text-secondary uppercase tracking-wider px-2 mb-2">Đã ghim</h2>
-              <nav className="flex flex-col gap-1"> {pinnedChats.map(s => <ChatListItem key={s.id} session={s} />)} </nav>
+          {searchQuery && filteredSessions.length === 0 && (
+            <div className="text-center px-4 py-8">
+              <p className="text-sm text-text-secondary">Không tìm thấy kết quả cho "{searchQuery}"</p>
             </div>
           )}
-          <h2 className="text-xs font-semibold text-text-secondary uppercase tracking-wider px-2 mb-2">{pinnedChats.length > 0 ? "Gần đây" : "Đoạn chat"}</h2>
-          <nav className="flex flex-col gap-1"> {unpinnedChats.map(s => <ChatListItem key={s.id} session={s} />)} </nav>
+          {!searchQuery && chatSessions.length === 0 && (
+            <div className="text-center px-4 py-8">
+              <p className="text-sm text-text-secondary">Không tồn tại đoạn chat nào cả.</p>
+            </div>
+          )}
+
+          {filteredSessions.length > 0 && (
+            <>
+              {pinnedChats.length > 0 && (
+                <div className="mb-4">
+                  <h2 className="flex items-center gap-1.5 text-xs font-semibold text-text-secondary uppercase tracking-wider px-2 mb-2">
+                    <PinIcon className="w-3 h-3" />
+                    <span>Đã ghim</span>
+                  </h2>
+                  <nav className="flex flex-col gap-1"> {pinnedChats.map(s => <ChatListItem key={s.id} session={s} />)} </nav>
+                </div>
+              )}
+
+              {unpinnedChats.length > 0 && (
+                <div>
+                  {pinnedChats.length > 0 && <div className="border-t border-border mx-2 mb-4"></div>}
+                  <h2 className="text-xs font-semibold text-text-secondary uppercase tracking-wider px-2 mb-2">
+                    {pinnedChats.length > 0 ? "Gần đây" : "Đoạn chat"}
+                  </h2>
+                  <nav className="flex flex-col gap-1"> {unpinnedChats.map(s => <ChatListItem key={s.id} session={s} />)} </nav>
+                </div>
+              )}
+            </>
+          )}
       </div>
 
       <div className="mt-2 px-2 space-y-1">
@@ -717,8 +1082,8 @@ const App: React.FC = () => {
       <div className="border-t border-border mt-2 pt-2">
           <div className="flex items-center gap-3 p-2 text-sm text-text-secondary rounded-lg hover:bg-card-hover w-full text-left">
               <button onClick={() => setIsSettingsOpen(true)} className="flex items-center gap-3 flex-1">
-                {currentUserData?.avatar ? ( <span className="text-2xl">{currentUserData.avatar}</span> ) : ( <UserIcon className="w-6 h-6" /> )}
-                <span className="font-medium flex-1 truncate text-text-primary">{currentUser}</span>
+                {currentUser?.avatar ? ( <span className="text-2xl">{currentUser.avatar}</span> ) : ( <UserIcon className="w-6 h-6" /> )}
+                <span className="font-medium flex-1 truncate text-text-primary">{currentUser.username}</span>
               </button>
               <button onClick={handleLogout} className="p-1.5 rounded-md hover:bg-card" aria-label="Đăng xuất" title="Đăng xuất"> <LogoutIcon className="w-5 h-5" /> </button>
           </div>
@@ -774,10 +1139,9 @@ const App: React.FC = () => {
                     <button onClick={handleExportChat} className="flex items-center gap-2 px-3 py-1.5 text-sm text-text-secondary bg-card-hover border border-border rounded-md hover:border-brand hover:text-brand transition-colors" title="Xuất cuộc trò chuyện (Markdown)"> <DownloadIcon className="w-4 h-4" /> </button>
                 </div>
             </header>
-          <main ref={chatContainerRef} className="flex-1 overflow-y-auto p-4 md:p-6 space-y-6">
-            {activeChat?.messages.map((msg, index) => ( <ChatMessage key={`${activeChat.id}-${index}`} message={msg} isLastMessage={index === activeChat.messages.length - 1} isLoading={isLoading} onFollowUpClick={handleFollowUpClick} onApplySchedule={handleApplySchedule} onOpenFlashcards={handleOpenFlashcards} onOpenMindMap={handleOpenMindMap} /> ))}
+          <main ref={chatContainerRef} className="flex-1 overflow-y-auto p-4 md:p-6 space-y-6 scroll-smooth">
+            {activeChat?.messages.map((msg, index) => ( <ChatMessage key={`${activeChat.id}-${index}`} message={msg} isLastMessage={index === activeChat.messages.length - 1} isLoading={isLoading} onFollowUpClick={handleFollowUpClick} onApplySchedule={handleApplySchedule} onOpenFlashcards={handleOpenFlashcards} onOpenMindMap={handleOpenMindMap} onAskSelection={handleAskSelection} onRegenerate={handleRegenerateResponse} userAvatar={currentUser?.avatar} /> ))}
             {isLoading && isLastMessageEmpty && <TypingIndicator />}
-            {error && ( <div className="bg-red-500/10 border border-red-500/30 text-red-500 dark:text-red-400 p-3 rounded-lg text-center max-w-3xl mx-auto"> <p><strong>Lỗi:</strong> {error}</p> </div> )}
           </main>
           <footer className="bg-card/80 backdrop-blur-sm border-t border-border p-4">
             <div className="max-w-3xl mx-auto">
@@ -826,9 +1190,9 @@ const App: React.FC = () => {
         </ToolModal>
       )}
 
-      {mindMapModalData && <MindMapModal data={mindMapModalData} onClose={() => setMindMapModalData(null)} />}
+      {mindMapModalData && <MindMapModal data={mindMapModalData} onClose={() => setMindMapModalData(null)} onCreateNewMindMap={handleCreateNewMindMap} />}
       {flashcardData && <FlashcardView cards={flashcardData} onClose={() => setFlashcardData(null)} />}
-      {isSettingsOpen && currentUserData && ( <SettingsModal user={currentUserData} onClose={() => setIsSettingsOpen(false)} onUpdateUser={handleUpdateUser} /> )}
+      {isSettingsOpen && currentUser && ( <SettingsModal user={currentUser} onClose={() => setIsSettingsOpen(false)} onUpdateUser={handleUpdateUser} /> )}
     </>
   );
 };

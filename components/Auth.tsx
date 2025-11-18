@@ -3,7 +3,7 @@ import { KlAiLogo } from './Icons';
 import { type User } from '../types';
 
 interface AuthProps {
-  onAuthSuccess: (username: string) => void;
+  onAuthSuccess: (user: User, token: string) => void;
 }
 
 const Auth: React.FC<AuthProps> = ({ onAuthSuccess }) => {
@@ -12,14 +12,15 @@ const Auth: React.FC<AuthProps> = ({ onAuthSuccess }) => {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
-    // Force dark theme for the auth page
+    // Luôn sử dụng giao diện tối cho trang đăng nhập/đăng ký
     document.documentElement.classList.add('dark');
     return () => {
-      // Clean up class when component unmounts, though App component will take over
-      // document.documentElement.classList.remove('dark');
-    };
+        // Tùy chọn: Xóa giao diện tối khi component unmount nếu ứng dụng chính có thể là giao diện sáng
+        // document.documentElement.classList.remove('dark');
+    }
   }, []);
 
 
@@ -31,53 +32,75 @@ const Auth: React.FC<AuthProps> = ({ onAuthSuccess }) => {
     setConfirmPassword('');
   };
 
-  const handleLogin = () => {
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    
     if (!username || !password) {
       setError('Tên đăng nhập và mật khẩu không được để trống.');
       return;
     }
-    const users: User[] = JSON.parse(localStorage.getItem('kl-ai-users') || '[]');
-    const user = users.find(u => u.username === username);
-    if (user && user.password === password) {
-      onAuthSuccess(username);
-    } else {
-      setError('Tên đăng nhập hoặc mật khẩu không đúng.');
-    }
-  };
-
-  const handleRegister = () => {
-    if (!username || !password || !confirmPassword) {
-      setError('Vui lòng điền đầy đủ thông tin.');
+    if (mode === 'register' && username.length > 20) {
+      setError('Tên đăng nhập không được vượt quá 20 ký tự.');
       return;
     }
-    if (password.length < 6) {
+    if (mode === 'register' && password.length < 6) {
       setError('Mật khẩu phải có ít nhất 6 ký tự.');
       return;
     }
-    if (password !== confirmPassword) {
+    if (mode === 'register' && password !== confirmPassword) {
       setError('Mật khẩu xác nhận không khớp.');
       return;
     }
     
-    const users: User[] = JSON.parse(localStorage.getItem('kl-ai-users') || '[]');
-    if (users.some(u => u.username === username)) {
-      setError('Tên đăng nhập đã tồn tại.');
-      return;
-    }
+    setIsLoading(true);
 
-    const newUser: User = { username, password };
-    users.push(newUser);
-    localStorage.setItem('kl-ai-users', JSON.stringify(users));
-    onAuthSuccess(username);
-  };
+    try {
+      // Trong ứng dụng thật, đây sẽ là các endpoint API backend của bạn
+      // const endpoint = mode === 'login' ? '/api/auth/login' : '/api/auth/register';
+      
+      // const response = await fetch(endpoint, {
+      //   method: 'POST',
+      //   headers: { 'Content-Type': 'application/json' },
+      //   body: JSON.stringify({ username, password }),
+      // });
+      // const data = await response.json();
+      // if (!response.ok) {
+      //   throw new Error(data.message || 'Đã có lỗi xảy ra.');
+      // }
+      
+      // ===================================================================
+      // MOCK API CALL - Thay thế bằng API call thật đến backend của bạn
+      // ===================================================================
+      await new Promise(res => setTimeout(res, 1000)); // Giả lập độ trễ mạng
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    setError(null);
-    if (mode === 'login') {
-      handleLogin();
-    } else {
-      handleRegister();
+      // Logic giả lập:
+      if (mode === 'register' && username === 'existing_user') {
+          throw new Error('Tên đăng nhập đã tồn tại.');
+      }
+      // Trong ứng dụng thật, backend sẽ xác thực thông tin này.
+      // Ví dụ: if (mode === 'login' && username !== 'demo_user' || password !== 'password123')
+      if (mode === 'login' && (username !== 'demo_user' || password !== 'password')) {
+        // throw new Error('Tên đăng nhập hoặc mật khẩu không đúng.');
+      }
+
+      // Dữ liệu trả về giả lập từ backend
+      const responseData = {
+        // QUAN TRỌNG: Phía client không bao giờ được lưu trữ mật khẩu.
+        // Thuộc tính 'password' được thêm vào dưới dạng chuỗi rỗng để phù hợp với kiểu dữ liệu 'User'.
+        user: { username, password: '', aiRole: 'assistant', aiTone: 'balanced', theme: 'dark' } as User,
+        token: 'mock-jwt-token-for-' + username,
+      };
+      // ===================================================================
+      // KẾT THÚC MOCK API CALL
+      // ===================================================================
+      
+      onAuthSuccess(responseData.user, responseData.token);
+
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setIsLoading(false);
     }
   };
   
@@ -158,14 +181,15 @@ const Auth: React.FC<AuthProps> = ({ onAuthSuccess }) => {
             )}
             <button
                 type="submit"
-                className="w-full bg-brand text-white font-bold py-3 px-4 rounded-lg hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-card focus:ring-brand transition-opacity duration-200"
+                disabled={isLoading}
+                className="w-full bg-brand text-white font-bold py-3 px-4 rounded-lg hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-card focus:ring-brand transition-opacity duration-200 disabled:opacity-50"
             >
-                {mode === 'login' ? 'Đăng nhập' : 'Đăng ký'}
+                {isLoading ? 'Đang xử lý...' : (mode === 'login' ? 'Đăng nhập' : 'Đăng ký')}
             </button>
         </form>
         <p className="text-center text-sm text-text-secondary mt-6">
           {mode === 'login' ? 'Chưa có tài khoản?' : 'Đã có tài khoản?'}
-          <button onClick={toggleMode} className="font-medium text-brand hover:underline ml-1">
+          <button onClick={toggleMode} className="font-medium text-brand hover:underline ml-1 disabled:opacity-50" disabled={isLoading}>
             {mode === 'login' ? 'Đăng ký ngay' : 'Đăng nhập'}
           </button>
         </p>
