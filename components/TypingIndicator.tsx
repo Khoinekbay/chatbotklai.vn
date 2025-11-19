@@ -3,7 +3,7 @@ import { AngryBotIcon } from './Icons';
 
 const TypingIndicator: React.FC = () => {
   return (
-    <div className="flex items-center gap-3 justify-start animate-slide-in-up py-2">
+    <div className="flex items-center gap-3 justify-start animate-message-pop-in py-2 origin-bottom-left">
       <AngryBotIcon className="w-8 h-8 flex-shrink-0 text-amber-400 animate-pulse" />
       <div className="flex items-center gap-3 bg-model-bubble-bg text-model-bubble-text px-4 py-3 rounded-2xl shadow-sm">
         <div className="flex space-x-1">

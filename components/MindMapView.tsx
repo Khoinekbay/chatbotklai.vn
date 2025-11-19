@@ -1,3 +1,4 @@
+
 import React, { useRef, useEffect, useState, useImperativeHandle } from 'react';
 import { type MindMapNode } from '../types';
 
@@ -9,6 +10,7 @@ interface MindMapViewProps {
   selectedNodeIds: number[];
   onToggleNodeSelection: (node: D3Node | null, isCtrl: boolean) => void;
   isPanMode: boolean;
+  onDataChange?: (data: MindMapNode) => void;
 }
 
 // Augment the D3 node type with our custom properties.
@@ -38,6 +40,7 @@ export interface MindMapViewHandles {
   detachNode: (nodeId: number) => void;
   changeColors: (nodeIdToColorMap: Map<number, string | null>) => void;
   updateNodeData: (nodeId: number, data: Partial<MindMapNode>) => void;
+  getNodeById: (id: number) => D3Node | undefined;
 }
 
 const isColorDark = (hexColor?: string): boolean => {
@@ -47,7 +50,6 @@ const isColorDark = (hexColor?: string): boolean => {
         const r = parseInt(color.substring(0, 2), 16);
         const g = parseInt(color.substring(2, 4), 16);
         const b = parseInt(color.substring(4, 6), 16);
-        // http://www.w3.org/TR/AERT#color-contrast
         const brightness = ((r * 299) + (g * 587) + (b * 114)) / 1000;
         return brightness < 128;
     } catch (e) {
@@ -57,7 +59,6 @@ const isColorDark = (hexColor?: string): boolean => {
 
 const renderNodeText = (text: string) => {
     if (!text) return '';
-    // Basic markdown for bold text. Sanitize by replacing < and >.
     return text
         .replace(/</g, '&lt;')
         .replace(/>/g, '&gt;')
@@ -76,7 +77,6 @@ const findNodeAndParent = (root: D3Node, nodeId: number, parent: D3Node | null =
     return null;
 };
 
-// A custom clone function to prevent "circular structure" errors from D3's parent references.
 const cloneTree = (node: D3Node): D3Node => {
     const newNode: any = {
         name: node.name,
@@ -101,19 +101,40 @@ const cloneTree = (node: D3Node): D3Node => {
     return newNode as D3Node;
 };
 
+const cleanNode = (node: D3Node): MindMapNode => {
+    const newNode: MindMapNode = {
+        name: node.name
+    };
+    if (node.color) newNode.color = node.color;
+    if (node.image) newNode.image = node.image;
+    if (node.link) newNode.link = node.link;
 
-const MindMapView = React.forwardRef<MindMapViewHandles, MindMapViewProps>(({ data, selectedNodeIds, onToggleNodeSelection, isPanMode }, ref) => {
+    const children = node.children || node._children;
+    if (children && children.length > 0) {
+        newNode.children = children.map(cleanNode);
+    }
+    return newNode;
+};
+
+
+const MindMapView = React.forwardRef<MindMapViewHandles, MindMapViewProps>(({ data, selectedNodeIds, onToggleNodeSelection, isPanMode, onDataChange }, ref) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const zoomBehavior = useRef<any>(null);
   const zoomState = useRef<{ translate: [number, number], scale: number } | null>(null);
   const nodeIdCounter = useRef(0);
+  const isInternalChange = useRef(false);
   
   const [internalData, setInternalData] = useState<D3Node | null>(null);
   const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
   const [editingNodeId, setEditingNodeId] = useState<number | null>(null);
 
   useEffect(() => {
+    if (isInternalChange.current) {
+        isInternalChange.current = false;
+        return;
+    }
+
     nodeIdCounter.current = 0;
     const assignIdsAndCollapse = (node: MindMapNode, depth = 0): D3Node => {
         const d3Node: D3Node = {
@@ -171,18 +192,43 @@ const MindMapView = React.forwardRef<MindMapViewHandles, MindMapViewProps>(({ da
     const scaleY = treeHeight > 0 ? (dimensions.height - 80) / treeHeight : 1;
     const scale = Math.min(scaleX, scaleY, 1.2);
     
-    const translateX = (dimensions.width / 2) - ((min_y + treeWidth / 2) * scale) + 60; // Adjust for left-heavy layout
+    const translateX = (dimensions.width / 2) - ((min_y + treeWidth / 2) * scale) + 60;
     const translateY = (dimensions.height / 2) - ((min_x + treeHeight / 2) * scale);
 
-    // Manually update state immediately to prevent race conditions
     zoomState.current = { translate: [translateX, translateY], scale: scale };
     
-    // Apply immediately without transition to avoid "snap back" race conditions
     zoomBehavior.current.translate([translateX, translateY]).scale(scale);
     svgSelection.call(zoomBehavior.current.event);
   };
 
-  // Main D3 Rendering Effect
+  const scrollToNode = (node: D3Node) => {
+    if (!zoomBehavior.current || !svgRef.current || !dimensions.width) return;
+    
+    const scale = zoomBehavior.current.scale();
+    const translate = zoomBehavior.current.translate();
+    
+    const nodeScreenX = node.y * scale + translate[0];
+    const nodeScreenY = node.x * scale + translate[1];
+    
+    const padding = 80;
+    const { width, height } = dimensions;
+
+    if (
+        nodeScreenX < padding || 
+        nodeScreenX > width - padding ||
+        nodeScreenY < padding || 
+        nodeScreenY > height - padding
+    ) {
+        const targetX = width / 2 - node.y * scale;
+        const targetY = height / 2 - node.x * scale;
+        
+        d3.select(svgRef.current).transition().duration(400)
+            .call(zoomBehavior.current.translate([targetX, targetY]).event);
+            
+        zoomState.current = { translate: [targetX, targetY], scale: scale };
+    }
+  };
+
   useEffect(() => {
     if (!internalData || !svgRef.current || dimensions.width === 0) return;
     
@@ -207,19 +253,18 @@ const MindMapView = React.forwardRef<MindMapViewHandles, MindMapViewProps>(({ da
             if (containerG) {
                 containerG.attr("transform", "translate(" + t + ")scale(" + s + ")");
             }
-            // Persist zoom state to prevent snapping back on re-renders
             zoomState.current = { translate: t, scale: s };
         });
 
     svgSelection
-        .html("") // Clear previous render
+        .html("")
         .attr("width", width)
         .attr("height", height)
         .classed("mindmap-view", true)
         .classed("is-panning", isPanMode)
         .call(zoomBehavior.current)
         .on("click", () => {
-            if (d3.event.defaultPrevented) return; // Prevent click if drag occurred
+            if (d3.event.defaultPrevented) return;
             if (isPanMode) return;
             onToggleNodeSelection(null, false)
         });
@@ -230,17 +275,13 @@ const MindMapView = React.forwardRef<MindMapViewHandles, MindMapViewProps>(({ da
     root.x0 = height / 2;
     root.y0 = 0;
     
-    // Restore zoom state if available, otherwise center
     if (zoomState.current) {
         zoomBehavior.current.translate(zoomState.current.translate).scale(zoomState.current.scale);
         containerG.attr("transform", "translate(" + zoomState.current.translate + ")scale(" + zoomState.current.scale + ")");
-    } else {
-        // We will center after updating the chart to ensure we have node positions
     }
 
     updateChart(root, root);
     
-    // Only center if no zoom state exists (first render)
     if (!zoomState.current) {
         centerAndFit(svgSelection, treeLayout);
     }
@@ -251,16 +292,15 @@ const MindMapView = React.forwardRef<MindMapViewHandles, MindMapViewProps>(({ da
         const nodes = treeLayout.nodes(rootNode).reverse();
         const links = treeLayout.links(nodes);
 
-        nodes.forEach((d: D3Node) => { d.y = d.depth * 280; }); // Increase spacing
+        nodes.forEach((d: D3Node) => { d.y = d.depth * 280; });
 
         const node = containerG.selectAll("g.node").data(nodes, (d: D3Node) => d.id);
 
-        // --- ENTER NODES ---
         const nodeEnter = node.enter().append("g")
             .attr("class", d => `node node-id-${d.id}`)
             .attr("transform", () => `translate(${sourceNode.y0 || sourceNode.y},${sourceNode.x0 || sourceNode.x})`)
             .on("click", function(d: D3Node) {
-                if (d3.event.defaultPrevented) return; // Prevent click if drag occurred
+                if (d3.event.defaultPrevented) return;
                 if (isPanMode) return;
                 d3.event.stopPropagation();
                 const isCtrl = d3.event.ctrlKey || d3.event.metaKey;
@@ -276,58 +316,14 @@ const MindMapView = React.forwardRef<MindMapViewHandles, MindMapViewProps>(({ da
                 if (isCollapsed) {
                     d.children = d._children;
                     d._children = undefined;
-                }
-
-                // Recalculate layout to get final positions
-                const allNodes = treeLayout.nodes(rootNode).reverse();
-                allNodes.forEach((n: D3Node) => { n.y = n.depth * 280; });
-
-                const targetNode = allNodes.find((n: D3Node) => n.id === d.id);
-                if (!targetNode) return;
-                
-                const childrenNodes = targetNode.children || [];
-                const points = [targetNode, ...childrenNodes];
-
-                const xCoords = points.map(p => p.x);
-                const yCoords = points.map(p => p.y);
-
-                const minX = d3.min(xCoords);
-                const maxX = d3.max(xCoords);
-                const minY = d3.min(yCoords);
-                const maxY = d3.max(yCoords);
-
-                const nodeWidth = 180;
-                const nodeHeight = 100;
-                const padding = 80;
-
-                const boundsWidth = (maxY - minY) + nodeWidth + padding;
-                const boundsHeight = (maxX - minX) + nodeHeight + padding;
-
-                const { width, height } = dimensions;
-                if (width === 0 || height === 0 || boundsWidth <= 0 || boundsHeight <= 0) return;
-
-                const scale = Math.min(width / boundsWidth, height / boundsHeight, 1.5);
-
-                const boundsCenterX = minY + (maxY - minY) / 2;
-                const boundsCenterY = minX + (maxX - minX) / 2;
-
-                const translateX = width / 2 - boundsCenterX * scale;
-                const translateY = height / 2 - boundsCenterY * scale;
-
-                // Manually update state
-                zoomState.current = { translate: [translateX, translateY], scale: scale };
-
-                svgSelection.transition().duration(750)
-                    .call(zoomBehavior.current.translate([translateX, translateY]).scale(scale).event);
-
-                // Only call updateChart if the structure actually changed
-                if (isCollapsed) {
                     updateChart(d, rootNode);
+                } else {
+                    setEditingNodeId(d.id);
                 }
             });
         
         const foWidth = 180;
-        const foHeight = 120; // Increased slightly to accommodate optional image/link
+        const foHeight = 120;
 
         nodeEnter.append("foreignObject")
             .attr("width", foWidth)
@@ -349,7 +345,7 @@ const MindMapView = React.forwardRef<MindMapViewHandles, MindMapViewProps>(({ da
             .on("click", (d: D3Node) => { 
                 if (isPanMode) return;
                 if (d3.event.defaultPrevented) return;
-                d3.event.stopPropagation(); // Prevent selection when toggling
+                d3.event.stopPropagation();
                 if (d.children) {
                     d._children = d.children;
                     d.children = undefined;
@@ -372,15 +368,12 @@ const MindMapView = React.forwardRef<MindMapViewHandles, MindMapViewProps>(({ da
             .style("font-weight", "bold")
             .text((d: D3Node) => d._children ? '+' : '-');
 
-        // --- UPDATE NODES ---
         const nodeUpdate = node.transition().duration(duration)
             .attr("transform", (d: D3Node) => `translate(${d.y},${d.x})`);
 
-        // Apply class changes directly to the selection, not the transition, as `classed` is not a transition method.
         node.select(".mindmap-node-body")
             .classed("is-selected", (d: D3Node) => selectedNodeIds.includes(d.id));
 
-        // Apply style changes to the transition so they animate smoothly.
         nodeUpdate.select(".mindmap-node-body")
             .style('background-color', (d: D3Node) => d.color || null)
             .style('border-color', (d: D3Node) => d.color || null)
@@ -390,7 +383,6 @@ const MindMapView = React.forwardRef<MindMapViewHandles, MindMapViewProps>(({ da
                 return null;
             });
         
-        // Re-render HTML content on update (allows image/link changes to reflect)
         node.select(".mindmap-node-body").html((d: D3Node) => {
              const imgHtml = d.image ? `<img src="${d.image}" class="mindmap-node-image" draggable="false" />` : '';
              const linkHtml = d.link ? `<a href="${d.link}" target="_blank" class="mindmap-node-link" onclick="event.stopPropagation()"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:12px;height:12px;"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg></a>` : '';
@@ -404,11 +396,9 @@ const MindMapView = React.forwardRef<MindMapViewHandles, MindMapViewProps>(({ da
             .select("text")
             .text((d: D3Node) => d._children ? '+' : '-');
 
-        // --- EXIT NODES ---
         node.exit().transition().duration(duration)
             .attr("transform", () => `translate(${sourceNode.y},${sourceNode.x})`).remove();
 
-        // --- LINKS ---
         const link = containerG.selectAll("path.link").data(links, (d: any) => d.target.id);
         
         link.enter().insert("path", "g")
@@ -434,11 +424,118 @@ const MindMapView = React.forwardRef<MindMapViewHandles, MindMapViewProps>(({ da
     }
   }, [internalData, dimensions, onToggleNodeSelection, selectedNodeIds, isPanMode]);
 
-  // Effect for handling inline editing
+  const addAndEditNode = (addLogic: (tree: D3Node) => number) => {
+      let newNodeId = -1;
+      handleAction(tree => {
+          newNodeId = addLogic(tree);
+          return tree;
+      });
+      
+      if (newNodeId !== -1) {
+          setTimeout(() => {
+             const selection = d3.select(`.node-id-${newNodeId}`);
+             if (!selection.empty()) {
+                 const datum = selection.datum() as D3Node;
+                 if (datum) {
+                     onToggleNodeSelection(datum, false);
+                     scrollToNode(datum);
+                     setEditingNodeId(newNodeId);
+                 }
+             }
+          }, 100);
+      }
+  };
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+        if (editingNodeId !== null || isPanMode || (e.target as HTMLElement).matches('input, textarea, [contenteditable]')) return;
+        
+        if (selectedNodeIds.length !== 1 || !internalData) return;
+
+        const currentNodeId = selectedNodeIds[0];
+        const found = findNodeAndParent(internalData, currentNodeId);
+        if (!found) return;
+        
+        const { node: currentNode, parent } = found;
+        let targetNode: D3Node | null = null;
+        
+        switch (e.key) {
+            case 'ArrowLeft':
+                e.preventDefault();
+                if (parent) targetNode = parent;
+                break;
+            case 'ArrowRight':
+                e.preventDefault();
+                if (currentNode.children && currentNode.children.length > 0) {
+                    const mid = Math.floor(currentNode.children.length / 2);
+                    targetNode = currentNode.children[mid];
+                } else if (currentNode._children) {
+                    currentNode.children = currentNode._children;
+                    currentNode._children = undefined;
+                    handleAction(() => {});
+                }
+                break;
+            case 'ArrowUp':
+                e.preventDefault();
+                if (parent && parent.children) {
+                    const idx = parent.children.findIndex(c => c.id === currentNodeId);
+                    if (idx > 0) targetNode = parent.children[idx - 1];
+                }
+                break;
+            case 'ArrowDown':
+                e.preventDefault();
+                if (parent && parent.children) {
+                    const idx = parent.children.findIndex(c => c.id === currentNodeId);
+                    if (idx < parent.children.length - 1) targetNode = parent.children[idx + 1];
+                }
+                break;
+            case 'Enter':
+                e.preventDefault();
+                if (currentNode.depth === 0) {
+                    setEditingNodeId(currentNode.id);
+                } else {
+                    if (ref && 'current' in ref && ref.current) {
+                        (ref.current as MindMapViewHandles).addSibling(currentNodeId);
+                    }
+                }
+                break;
+            case 'F2':
+                e.preventDefault();
+                setEditingNodeId(currentNode.id);
+                break;
+            case 'Tab':
+                e.preventDefault();
+                if (ref && 'current' in ref && ref.current) {
+                    (ref.current as MindMapViewHandles).addChild(currentNodeId);
+                }
+                break;
+            case ' ':
+                e.preventDefault();
+                if (currentNode.children) {
+                     currentNode._children = currentNode.children;
+                     currentNode.children = undefined;
+                } else if (currentNode._children) {
+                     currentNode.children = currentNode._children;
+                     currentNode._children = undefined;
+                }
+                handleAction(() => {});
+                break;
+        }
+
+        if (targetNode) {
+            onToggleNodeSelection(targetNode, false);
+            scrollToNode(targetNode);
+        }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [selectedNodeIds, internalData, editingNodeId, isPanMode, onToggleNodeSelection]);
+
   useEffect(() => {
     if (editingNodeId === null || !svgRef.current) return;
     
-    onToggleNodeSelection(null, false); // Deselect while editing
+    onToggleNodeSelection(null, false); 
 
     const node = d3.select(`.node-id-${editingNodeId}`);
     if (node.empty()) {
@@ -450,7 +547,8 @@ const MindMapView = React.forwardRef<MindMapViewHandles, MindMapViewProps>(({ da
     const d = node.datum();
     const initialText = d.name;
 
-    // Only make the text part editable, not the image
+    nodeTextDiv.text(initialText);
+
     nodeTextDiv
       .attr('contentEditable', true)
       .style('outline', 'none')
@@ -466,9 +564,10 @@ const MindMapView = React.forwardRef<MindMapViewHandles, MindMapViewProps>(({ da
               if (found) found.node.name = newName;
           });
         } else {
-          this.innerHTML = renderNodeText(initialText); // Revert if empty
+          this.innerHTML = renderNodeText(initialText);
         }
         setEditingNodeId(null);
+        onToggleNodeSelection(d, false);
       })
       .on('keydown', function() {
         if (d3.event.key === 'Enter' && !d3.event.shiftKey) {
@@ -476,14 +575,22 @@ const MindMapView = React.forwardRef<MindMapViewHandles, MindMapViewProps>(({ da
             this.blur();
         }
         if (d3.event.key === 'Escape') {
-            this.textContent = initialText;
+            this.innerHTML = renderNodeText(initialText);
             this.blur();
+        }
+        if (d3.event.key === 'Tab') {
+            d3.event.preventDefault();
+            this.blur();
+            setTimeout(() => {
+                 if (ref && 'current' in ref && ref.current) {
+                    (ref.current as MindMapViewHandles).addChild(d.id);
+                }
+            }, 50);
         }
       });
       
     const el = nodeTextDiv.node();
     el.focus();
-    // Move cursor to end
     const range = document.createRange();
     const sel = window.getSelection();
     range.selectNodeContents(el);
@@ -496,7 +603,13 @@ const MindMapView = React.forwardRef<MindMapViewHandles, MindMapViewProps>(({ da
     if (!internalData) return;
     const clonedData = cloneTree(internalData);
     const result = action(clonedData);
-    setInternalData(result || clonedData);
+    const newData = result || clonedData;
+    setInternalData(newData);
+    
+    if (onDataChange) {
+        isInternalChange.current = true;
+        onDataChange(cleanNode(newData));
+    }
   };
 
   useImperativeHandle(ref, () => ({
@@ -517,32 +630,40 @@ const MindMapView = React.forwardRef<MindMapViewHandles, MindMapViewProps>(({ da
        centerAndFit(svgSelection, tree);
     },
     editNode: (nodeId) => setEditingNodeId(nodeId),
-    addChild: (nodeId) => handleAction(tree => {
-        const found = findNodeAndParent(tree, nodeId);
-        if (!found) return;
-        const { node: targetNode } = found;
+    addChild: (nodeId) => {
+        addAndEditNode((tree) => {
+            const found = findNodeAndParent(tree, nodeId);
+            if (!found) return -1;
+            const { node: targetNode } = found;
 
-        if (!targetNode.children) {
-            targetNode.children = targetNode._children || [];
-            targetNode._children = undefined;
-        }
-        targetNode.children.push({
-            id: nodeIdCounter.current++, name: 'Nhánh mới', depth: targetNode.depth + 1, x:0, y:0
+            if (!targetNode.children) {
+                targetNode.children = targetNode._children || [];
+                targetNode._children = undefined;
+            }
+            const newId = nodeIdCounter.current++;
+            targetNode.children.push({
+                id: newId, name: 'Nhánh mới', depth: targetNode.depth + 1, x:0, y:0
+            });
+            return newId;
         });
-    }),
-    addSibling: (nodeId) => handleAction(tree => {
-        const found = findNodeAndParent(tree, nodeId);
-        if (!found || !found.parent) return;
-        const { node: targetNode, parent } = found;
+    },
+    addSibling: (nodeId) => {
+        addAndEditNode((tree) => {
+             const found = findNodeAndParent(tree, nodeId);
+            if (!found || !found.parent) return -1;
+            const { node: targetNode, parent } = found;
 
-        const children = parent.children || parent._children;
-        if (!children) return;
+            const children = parent.children || parent._children;
+            if (!children) return -1;
 
-        const index = children.findIndex(c => c.id === targetNode.id);
-        children.splice(index + 1, 0, {
-        id: nodeIdCounter.current++, name: 'Mục mới', depth: targetNode.depth, x:0, y:0
+            const index = children.findIndex(c => c.id === targetNode.id);
+            const newId = nodeIdCounter.current++;
+            children.splice(index + 1, 0, {
+                id: newId, name: 'Mục mới', depth: targetNode.depth, x:0, y:0
+            });
+            return newId;
         });
-    }),
+    },
     detachNode: (nodeId) => handleAction(tree => {
         const found = findNodeAndParent(tree, nodeId);
         if (!found || !found.parent) return;
@@ -604,7 +725,7 @@ const MindMapView = React.forwardRef<MindMapViewHandles, MindMapViewProps>(({ da
             .sort((a, b) => b.node.depth - a.node.depth);
 
         nodesToDelete.forEach(found => {
-            if (found.node.id === tree.id || !found.parent) return; // Cannot delete root
+            if (found.node.id === tree.id || !found.parent) return; 
             
             const { parent } = found;
             const children = parent.children || parent._children;
@@ -614,6 +735,11 @@ const MindMapView = React.forwardRef<MindMapViewHandles, MindMapViewProps>(({ da
             }
         });
     }),
+    getNodeById: (id) => {
+        if (!internalData) return undefined;
+        const found = findNodeAndParent(internalData, id);
+        return found ? found.node : undefined;
+    },
   }));
 
   return (

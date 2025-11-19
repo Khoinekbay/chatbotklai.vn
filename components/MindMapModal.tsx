@@ -1,6 +1,5 @@
 
-
-import React, { useRef, useState } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { type MindMapNode } from '../types';
 import { XIcon, ZoomInIcon, ZoomOutIcon, CenterIcon, EditIcon, PlusCircleIcon, TrashIcon, AddSiblingIcon, PaletteIcon, DetachIcon, MindMapIcon, HandIcon, ImageIcon, LinkIcon } from './Icons';
@@ -41,15 +40,19 @@ interface MindMapModalProps {
   data: MindMapNode;
   onClose: () => void;
   onCreateNewMindMap: (data: MindMapNode) => void;
+  onSave: (data: MindMapNode) => void;
 }
 
-const MindMapModal: React.FC<MindMapModalProps> = ({ data, onClose, onCreateNewMindMap }) => {
+const MindMapModal: React.FC<MindMapModalProps> = ({ data, onClose, onCreateNewMindMap, onSave }) => {
   const mindMapRef = useRef<MindMapViewHandles>(null);
   const [selectedNodes, setSelectedNodes] = useState<D3Node[]>([]);
   const [isColorPickerOpen, setIsColorPickerOpen] = useState(false);
   const [isPanMode, setIsPanMode] = useState(false);
   const colorPickerButtonRef = useRef<HTMLButtonElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // REMOVED: The useEffect that cleared selectedNodes on [data] change.
+  // Keeping selection allows continuous editing (e.g., changing color then adding a child).
 
   const singleSelectionNode = selectedNodes.length === 1 ? selectedNodes[0] : null;
 
@@ -66,12 +69,20 @@ const MindMapModal: React.FC<MindMapModalProps> = ({ data, onClose, onCreateNewM
     if (selectedNodes.length > 0 && window.confirm(`Bạn có chắc muốn xóa ${selectedNodes.length} mục đã chọn và tất cả các mục con của chúng?`)) {
         const idsToDelete = selectedNodes.map(n => n.id);
         mindMapRef.current?.deleteNodes(idsToDelete);
-        setSelectedNodes([]);
+        setSelectedNodes([]); // Clear selection explicitly after deletion
     }
   };
   
   const handleDetachToNewMindMap = () => {
     if (selectedNodes.length === 0) return;
+
+    // Fix: Fetch fresh node data to ensure we have latest children/state
+    // Using selectedNodes directly might rely on stale closures from the drag/edit events
+    const freshNodes = selectedNodes
+        .map(n => mindMapRef.current?.getNodeById(n.id))
+        .filter((n): n is D3Node => !!n);
+
+    if (freshNodes.length === 0) return;
 
     const deepClone = (node: D3Node): MindMapNode => {
         const newNode: MindMapNode = { name: node.name };
@@ -87,7 +98,7 @@ const MindMapModal: React.FC<MindMapModalProps> = ({ data, onClose, onCreateNewM
         return newNode;
     };
 
-    const sortedByDepth = [...selectedNodes].sort((a, b) => a.depth - b.depth);
+    const sortedByDepth = [...freshNodes].sort((a, b) => a.depth - b.depth);
     const newRootNode = sortedByDepth[0];
     const otherNodes = sortedByDepth.slice(1);
 
@@ -108,7 +119,6 @@ const MindMapModal: React.FC<MindMapModalProps> = ({ data, onClose, onCreateNewM
     newMindMapRoot.children.push(...nodesToAttach.map(deepClone));
 
     onCreateNewMindMap(newMindMapRoot);
-    onClose();
   };
 
 
@@ -205,6 +215,7 @@ const MindMapModal: React.FC<MindMapModalProps> = ({ data, onClose, onCreateNewM
                 selectedNodeIds={selectedNodes.map(n => n.id)}
                 onToggleNodeSelection={handleToggleNodeSelection}
                 isPanMode={isPanMode}
+                onDataChange={onSave}
             />
             <input 
                 type="file" 

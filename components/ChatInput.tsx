@@ -1,5 +1,4 @@
 
-
 import React, { useState, useRef, useEffect } from 'react';
 import { SendIcon, AttachmentIcon, XIcon, MicrophoneIcon, FileIcon, ScanIcon } from './Icons';
 
@@ -135,6 +134,10 @@ const ChatInput: React.FC<ChatInputProps> = ({ onSendMessage, isLoading, placeho
       setFiles(prev => [...prev, ...newFiles]);
       setImagePreviewUrls(prev => [...prev, ...newUrls]);
     }
+    // Reset input value to allow re-selection of the same file if needed
+    if (e.target) {
+        e.target.value = '';
+    }
   };
 
   const toggleListening = () => {
@@ -187,6 +190,9 @@ const ChatInput: React.FC<ChatInputProps> = ({ onSendMessage, isLoading, placeho
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    // Prevent send if user is currently composing via IME (e.g. Vietnamese Telex)
+    if (e.nativeEvent.isComposing) return;
+
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSend();

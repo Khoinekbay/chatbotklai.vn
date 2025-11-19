@@ -1,13 +1,33 @@
-
-
 <!DOCTYPE html>
 <html lang="vi">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>KL AI</title>
+    
+    <!-- Resource Hints for Performance -->
+    <link rel="dns-prefetch" href="https://cdn.tailwindcss.com">
+    <link rel="dns-prefetch" href="https://aistudiocdn.com">
+    <link rel="preconnect" href="https://aistudiocdn.com" crossorigin>
+    
+    <link rel="dns-prefetch" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.googleapis.com" crossorigin>
+    <link rel="dns-prefetch" href="https://fonts.gstatic.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    
+    <link rel="dns-prefetch" href="https://cdnjs.cloudflare.com">
+    <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin>
+    
+    <link rel="dns-prefetch" href="https://cdn.jsdelivr.net">
+    <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+    
+    <link rel="dns-prefetch" href="https://d3js.org">
+    <link rel="preconnect" href="https://d3js.org" crossorigin>
+    
+    <link rel="dns-prefetch" href="https://unpkg.com">
+    <link rel="preconnect" href="https://unpkg.com" crossorigin>
+    
     <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
     <script>
       window.MathJax = {
         tex: {
@@ -22,13 +42,11 @@
     <script id="MathJax-script" async
       src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js">
     </script>
-    <script src="https://d3js.org/d3.v3.min.js"></script>
-    <script src="https://unpkg.com/function-plot/dist/function-plot.js"></script>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <script src="https://d3js.org/d3.v3.min.js" defer></script>
+    <script src="https://unpkg.com/function-plot/dist/function-plot.js" defer></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&family=Lora:ital,wght@0,400;0,700;1,400&family=Roboto+Mono:wght@400;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css">
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js" defer></script>
 
     <style>
       :root {
@@ -81,6 +99,16 @@
         --background-rgb: 15, 23, 42;
         --border-rgb: 51, 65, 85;
       }
+      @keyframes messagePopIn {
+        0% {
+          opacity: 0;
+          transform: translateY(10px) scale(0.98);
+        }
+        100% {
+          opacity: 1;
+          transform: translateY(0) scale(1);
+        }
+      }
       @keyframes slideInUp {
         from {
           transform: translateY(10px);
@@ -97,7 +125,7 @@
           opacity: 0.7;
         }
         50% {
-          transform: translateY(-5px) scale(1.1);
+          transform: translateY(-4px) scale(1.1);
           opacity: 1;
         }
       }
@@ -136,9 +164,9 @@
       }
 
       /* Styles for Bảng Biến Thiên (Variation Table) */
-      /* Supports both the wrapper based class and direct table class */
-      .variation-table-container,
-      .prose table.variation-table {
+      
+      /* The container wrapper */
+      .variation-table-container {
         display: flex;
         justify-content: center;
         margin: 1.5em 0;
@@ -147,10 +175,11 @@
         border: none !important;
         border-radius: 0 !important;
       }
-      
-      /* Reset styles if it was a prose table */
+
+      /* The table itself - MUST be display: table or table-root, NOT flex */
       .variation-table-container table,
       .prose table.variation-table {
+        display: table !important;
         border-collapse: collapse;
         border: 1px solid var(--text-primary) !important; 
         font-family: 'Times New Roman', serif; /* Math textbook font */
@@ -535,6 +564,7 @@
               mono: ['Roboto Mono', 'monospace'],
             },
             animation: {
+              'message-pop-in': 'messagePopIn 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards',
               'slide-in-up': 'slideInUp 0.3s ease-out forwards',
               'dynamic-dot': 'dynamic-dot 1.4s ease-in-out infinite',
               'slide-in-left': 'slideInLeft 0.3s ease-out forwards',

@@ -1,5 +1,4 @@
 
-
 import { User } from '../types';
 
 const USERS_KEY = 'kl_ai_users';
@@ -87,5 +86,21 @@ export const api = {
           user: demoUser, 
           token: `demo-token-${Date.now()}` 
       };
+  },
+
+  // Update User Information
+  updateUser: async (username: string, updates: Partial<User>): Promise<User> => {
+      await new Promise(resolve => setTimeout(resolve, 300));
+      const users = getUsers();
+      
+      if (!users[username]) {
+          throw new Error('Người dùng không tồn tại.');
+      }
+
+      const updatedUser = { ...users[username], ...updates };
+      users[username] = updatedUser;
+      saveUsers(users);
+      
+      return updatedUser;
   }
 };

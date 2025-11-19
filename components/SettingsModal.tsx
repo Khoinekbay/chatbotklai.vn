@@ -41,19 +41,41 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ user, onClose, onUpdateUs
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [isPasswordLoading, setIsPasswordLoading] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  
+  const bgFileInputRef = useRef<HTMLInputElement>(null);
+  const avatarFileInputRef = useRef<HTMLInputElement>(null);
 
   const handleUpdate = (updates: Partial<User>) => {
     onUpdateUser(updates);
   };
   
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleBgFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file && file.type.startsWith('image/')) {
         const reader = new FileReader();
         reader.onload = (event) => {
             const dataUrl = event.target?.result as string;
             handleUpdate({ backgroundUrl: dataUrl });
+        };
+        reader.readAsDataURL(file);
+    }
+    if (e.target) {
+        e.target.value = '';
+    }
+  };
+
+  const handleAvatarFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file && file.type.startsWith('image/')) {
+        // Simple size check (limit to ~2MB to avoid localStorage issues)
+        if (file.size > 2 * 1024 * 1024) {
+            alert("Vui lòng chọn ảnh nhỏ hơn 2MB");
+            return;
+        }
+        const reader = new FileReader();
+        reader.onload = (event) => {
+            const dataUrl = event.target?.result as string;
+            handleUpdate({ avatar: dataUrl });
         };
         reader.readAsDataURL(file);
     }
@@ -80,20 +102,24 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ user, onClose, onUpdateUs
     if (newPassword !== confirmPassword) {
       setError('Mật khẩu mới không khớp.'); return;
     }
+    
+    // Verify current password (simple check since we have user data)
+    if (user.password && currentPassword !== user.password) {
+        setError('Mật khẩu hiện tại không đúng.');
+        return;
+    }
 
     setIsPasswordLoading(true);
     try {
-        await new Promise(res => setTimeout(res, 500));
-        // MOCK: Check if current password is "wrong_password" to simulate error
-        if (currentPassword === 'wrong_password') {
-            throw new Error('Mật khẩu hiện tại không đúng.');
-        }
+        // Actually call the update function to save the new password
+        await onUpdateUser({ password: newPassword });
+        
         setSuccessMessage('Đổi mật khẩu thành công!');
         setCurrentPassword('');
         setNewPassword('');
         setConfirmPassword('');
     } catch (err: any) {
-        setError(err.message);
+        setError(err.message || 'Không thể đổi mật khẩu.');
     } finally {
         setIsPasswordLoading(false);
     }
@@ -141,7 +167,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ user, onClose, onUpdateUs
             <SettingItem title="Ảnh nền cuộc trò chuyện" description="Cá nhân hóa giao diện chat bằng ảnh nền của riêng bạn.">
                 <div className="flex items-center gap-2">
                     <label htmlFor="bg-upload" className="cursor-pointer px-4 py-2 text-sm rounded-lg bg-input-bg hover:bg-border transition-colors font-medium border border-border"> Tải ảnh lên </label>
-                    <input id="bg-upload" ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleFileChange} />
+                    <input id="bg-upload" ref={bgFileInputRef} type="file" accept="image/*" className="hidden" onChange={handleBgFileChange} />
                     {user.backgroundUrl && (
                         <button onClick={handleRemoveBackground} className="px-4 py-2 text-sm rounded-lg bg-red-500/10 text-red-500 hover:bg-red-500/20 transition-colors font-medium"> Xóa ảnh </button>
                     )}
@@ -164,7 +190,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ user, onClose, onUpdateUs
       case 'personalization':
         return (
           <div className="divide-y divide-border">
-            <SettingItem title="Avatar" description="Chọn một emoji để làm ảnh đại diện của bạn.">
+            <SettingItem title="Avatar" description="Chọn emoji hoặc tải ảnh của bạn lên.">
                 <div className="grid grid-cols-4 sm:grid-cols-8 gap-3">
                     {AVATARS.map(avatar => (
                       <button key={avatar} onClick={() => handleUpdate({ avatar })} className={`text-3xl rounded-full aspect-square flex items-center justify-center transition-all duration-200 hover:scale-110 ${user.avatar === avatar ? 'bg-brand-secondary ring-4 ring-brand/30' : 'bg-input-bg hover:bg-border'}`} aria-label={`Chọn avatar ${avatar}`}>
@@ -172,7 +198,22 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ user, onClose, onUpdateUs
                       </button>
                     ))}
                 </div>
-                {user.avatar && (<button onClick={() => handleUpdate({ avatar: '' })} className="text-sm text-text-secondary hover:text-red-500 underline mt-4"> Xóa avatar </button> )}
+                
+                <div className="mt-4 flex items-center gap-3">
+                     <label htmlFor="avatar-upload" className="cursor-pointer px-4 py-2 text-sm rounded-lg bg-brand text-white hover:bg-brand/90 transition-colors font-medium shadow-md">
+                         Tải ảnh lên
+                     </label>
+                     <input id="avatar-upload" ref={avatarFileInputRef} type="file" accept="image/*" className="hidden" onChange={handleAvatarFileChange} />
+                     
+                     {user.avatar && user.avatar.startsWith('data:') && (
+                         <div className="flex items-center gap-2">
+                             <span className="text-sm text-text-secondary">Hiện tại:</span>
+                             <img src={user.avatar} alt="Custom Avatar" className="w-8 h-8 rounded-full object-cover border border-border" />
+                         </div>
+                     )}
+                     
+                     {user.avatar && (<button onClick={() => handleUpdate({ avatar: '' })} className="text-sm text-text-secondary hover:text-red-500 underline ml-auto"> Xóa avatar </button> )}
+                </div>
             </SettingItem>
             <SettingItem title="Vai trò AI" description="Xác định vai trò của AI để nhận được phản hồi phù hợp nhất.">
                 <div className="flex flex-col sm:flex-row gap-2">

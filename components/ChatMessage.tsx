@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { type Message, type MindMapNode, type FollowUpAction } from '../types';
@@ -8,7 +9,7 @@ import { UserIcon, AngryBotIcon, SpeakerIcon, ShareIcon, CheckIcon, BellPlusIcon
 declare global {
   interface Window {
     MathJax: {
-      typesetPromise: () => Promise<void>;
+      typesetPromise: (elements?: HTMLElement[]) => Promise<void>;
     };
     functionPlot: (options: any) => any;
     hljs: any;
@@ -256,9 +257,11 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, isLastMessage = fals
              }
         });
 
-        // 4. Typeset MathJax
-        if (window.MathJax) {
-            window.MathJax.typesetPromise().catch(err => console.error('MathJax typesetting failed:', err));
+        // 4. Typeset MathJax - Scoped to current message only for performance
+        if (window.MathJax && contentRef.current) {
+            // Optimization: Only typeset the specific container, not the whole document.
+            // passing [contentRef.current] forces MathJax to only look at this message.
+            window.MathJax.typesetPromise([contentRef.current]).catch(err => console.error('MathJax typesetting failed:', err));
         }
 
         // 5. Code Block Enhancements
@@ -452,8 +455,12 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, isLastMessage = fals
         return `${mathPlaceholder}${index}${mathPlaceholder}`;
     });
 
+    // Use a deterministic counter for graphs within this specific render cycle of the message
+    let graphCounter = 0;
+
     textWithPlaceholders = textWithPlaceholders.replace(/```graph\n([\s\S]*?)\n```/g, (match, content) => {
-        const index = Math.random().toString(36).substring(7);
+        // Use messageId + counter to ensure stability across re-renders
+        const uniqueGraphId = `${messageId.current}-${graphCounter++}`;
         
         const functionData = content.trim().split('\n').map(line => {
             const trimmedLine = line.trim();
@@ -519,7 +526,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, isLastMessage = fals
         }).filter((item): item is { fn: string, range?: [number, number] } => item !== null);
         
         const encodedData = JSON.stringify(functionData).replace(/'/g, '&apos;');
-        return `<div id="graph-${messageId.current}-${index}" class="graph-container my-4" data-functions='${encodedData}'></div>`;
+        return `<div id="graph-${uniqueGraphId}" class="graph-container my-4" data-functions='${encodedData}'></div>`;
     });
     
     let html = markdownToHTML(textWithPlaceholders);
@@ -558,7 +565,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, isLastMessage = fals
     <>
       {selectionPopover?.visible && !isUser && createPortal(
           <div
-              className="fixed bg-card border border-border shadow-lg rounded-full flex items-center gap-2 px-3 py-1.5 animate-slide-in-up"
+              className="fixed bg-card border border-border shadow-lg rounded-full flex items-center gap-2 px-3 py-1.5 animate-message-pop-in"
               style={{
                   top: `${selectionPopover.y}px`,
                   left: `${selectionPopover.x}px`,
@@ -585,12 +592,12 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, isLastMessage = fals
           </div>,
           document.body
       )}
-      <div className="animate-slide-in-up">
+      <div className="animate-message-pop-in origin-bottom-left">
         <div className={`flex items-start gap-3 w-full max-w-full ${alignmentClasses}`}>
           {!isUser && <IconComponent className={`w-8 h-8 flex-shrink-0 mt-1 ${iconClasses}`} />}
           <div 
             ref={contentRef}
-            className={`px-4 py-3 rounded-2xl max-w-xl lg:max-w-3xl prose prose-sm dark:prose-invert break-words shadow-md ${bubbleClasses}`}
+            className={`px-4 py-3 rounded-2xl max-w-xl lg:max-w-3xl prose prose-sm dark:prose-invert break-words shadow-sm ${bubbleClasses}`}
           >
             {message.files && message.files.length > 0 && (
               <div className={`mb-2 not-prose grid gap-2 ${message.files.length > 1 ? 'grid-cols-2' : 'grid-cols-1'}`}>
@@ -615,11 +622,15 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, isLastMessage = fals
             {renderContent(textToDisplay)}
             {isTyping && <span className="inline-block w-2 h-4 bg-gray-400 dark:bg-gray-500 animate-pulse ml-1 align-bottom"></span>}
           </div>
-          {/* FIX: Conditionally render user avatar or default icon. */}
+          
           {isUser && (userAvatar ? (
-            <span className="w-8 h-8 flex-shrink-0 mt-1 rounded-full bg-card-hover flex items-center justify-center text-2xl">
-              {userAvatar}
-            </span>
+             <div className="w-8 h-8 flex-shrink-0 mt-1 rounded-full bg-card-hover flex items-center justify-center overflow-hidden border border-border">
+                  {userAvatar.startsWith('data:') ? (
+                       <img src={userAvatar} alt="User" className="w-full h-full object-cover" />
+                  ) : (
+                      <span className="text-2xl">{userAvatar}</span>
+                  )}
+             </div>
           ) : (
             <IconComponent className={`w-8 h-8 flex-shrink-0 mt-1 ${iconClasses}`} />
           ))}
