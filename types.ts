@@ -4,6 +4,8 @@ export type Role = 'user' | 'model';
 
 export type Mode = 'chat' | 'create_exam' | 'solve_exam' | 'create_schedule' | 'learn' | 'exam' | 'theory' | 'flashcard' | 'scramble_exam' | 'similar_exam' | 'create_file' | 'mind_map';
 
+export type FollowUpAction = 'explain' | 'example' | 'summarize';
+
 export interface MindMapNode {
   name: string;
   children?: MindMapNode[];
