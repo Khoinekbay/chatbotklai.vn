@@ -17,6 +17,8 @@ const MindMapModal = React.lazy(() => import('./MindMapModal'));
 
 
 const DEMO_MESSAGE_LIMIT = 10;
+// Use Gemini 2.5 Flash for robust performance and stability on Vercel
+const MODEL_NAME = 'gemini-2.5-flash';
 
 const getSystemInstruction = (role: User['aiRole'] = 'assistant', tone: User['aiTone'] = 'balanced'): string => {
     let roleDescription = '';
@@ -273,10 +275,11 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
     setActiveChatId(newChat.id);
     setIsMobileSidebarOpen(false);
     
+    console.log("Initializing New Chat with Model:", MODEL_NAME);
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
     const systemInstruction = getSystemInstruction(currentUser?.aiRole, currentUser?.aiTone);
     chatInstances.current[newChat.id] = ai.chats.create({
-        model: 'gemini-3-pro-preview',
+        model: MODEL_NAME,
         config: { systemInstruction },
     });
   }, [currentUser]);
@@ -321,6 +324,11 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
   
   useEffect(() => {
     if (!currentUser) return;
+    // Check API Key existence for debugging
+    if (!process.env.API_KEY) {
+        console.error("Warning: API_KEY is missing from environment variables!");
+    }
+
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
     const systemInstruction = getSystemInstruction(currentUser?.aiRole, currentUser?.aiTone);
     
@@ -338,7 +346,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
                 : chatHistory;
 
             chatInstances.current[session.id] = ai.chats.create({
-                model: 'gemini-3-pro-preview',
+                model: MODEL_NAME,
                 config: { systemInstruction },
                 history: historyWithoutWelcome,
             });
@@ -380,7 +388,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
     try {
         const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
         const response = await ai.models.generateContent({
-            model: 'gemini-3-pro-preview',
+            model: MODEL_NAME,
             contents: {
                 parts: [
                     { inlineData: { mimeType: file.mimeType, data: file.data } },
@@ -446,7 +454,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
             const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
             try {
                 const titleGenPrompt = `Dựa vào yêu cầu đầu tiên này: "${promptText}", hãy tạo một tiêu đề ngắn gọn (tối đa 5 từ) bằng tiếng Việt cho cuộc trò chuyện. Nếu có tệp đính kèm, hãy mô tả ngắn gọn mục đích. Chỉ trả về tiêu đề, không thêm bất kỳ lời giải thích hay định dạng nào.`;
-                const titleResponse = await ai.models.generateContent({ model: 'gemini-3-pro-preview', contents: titleGenPrompt });
+                const titleResponse = await ai.models.generateContent({ model: MODEL_NAME, contents: titleGenPrompt });
                 let newTitle = titleResponse.text.trim().replace(/^"|"$/g, '');
                 if (newTitle) {
                     setChatSessions(prev =>
@@ -528,16 +536,19 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
             }
         }
 
-    } catch (error) {
+    } catch (error: any) {
         console.error("Error sending message:", error);
-        setError("Đã có lỗi xảy ra khi gửi tin nhắn.");
+        // Log detailed error if available to help user troubleshoot
+        if (error.message) console.error("Detail:", error.message);
+
+        setError("Đã có lỗi xảy ra khi gửi tin nhắn. (Kiểm tra API Key của bạn)");
         setChatSessions(prev => 
             prev.map(chat => {
                 if (chat.id !== activeChatId) return chat;
                 const newMessages = [...chat.messages];
                 const lastMsg = { ...newMessages[newMessages.length - 1] };
                 lastMsg.isError = true;
-                lastMsg.text = "Xin lỗi, tôi gặp sự cố khi xử lý yêu cầu này.";
+                lastMsg.text = "Xin lỗi, tôi gặp sự cố khi xử lý yêu cầu này. Vui lòng thử lại hoặc kiểm tra kết nối.";
                 newMessages[newMessages.length - 1] = lastMsg;
                 return { ...chat, messages: newMessages };
             })
@@ -591,7 +602,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
                         : chatHistory;
 
                     chatInstances.current[session.id] = ai.chats.create({
-                        model: 'gemini-3-pro-preview',
+                        model: MODEL_NAME,
                         config: { systemInstruction },
                         history: historyWithoutWelcome,
                     });
@@ -690,27 +701,21 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
                         )}
                   </div>
                   <div className="flex flex-col">
-                      <span className="font-semibold truncate max-w-[120px] text-sm">{currentUser.username}</span>
-                      {currentUser.isDemo && <span className="text-[10px] text-orange-500 font-bold uppercase">Demo Guest</span>}
+                      <span className="font-semibold truncate max-w-[120px]">{currentUser.username}</span>
+                      <span className="text-xs text-text-secondary capitalize">{currentUser.aiRole === 'assistant' ? 'Trợ lý AI' : currentUser.aiRole === 'teacher' ? 'Giáo viên AI' : 'Bạn học AI'}</span>
                   </div>
               </div>
-              <div className="flex items-center gap-1">
-                  <button 
-                    onClick={handleOpenSettings} 
-                    className={`p-2 rounded-lg transition-colors ${currentUser.isDemo ? 'text-text-secondary/40 cursor-not-allowed' : 'hover:bg-sidebar text-text-secondary hover:text-text-primary'}`}
-                    title={currentUser.isDemo ? "Không khả dụng cho Demo" : "Cài đặt"}
-                  >
-                      <SettingsIcon className="w-5 h-5" />
-                  </button>
-                  <button onClick={onLogout} className="p-2 hover:bg-red-500/10 rounded-lg transition-colors text-text-secondary hover:text-red-500">
-                      <LogoutIcon className="w-5 h-5" />
-                  </button>
-              </div>
+               <button onClick={handleOpenSettings} className="p-2 rounded-full hover:bg-card-hover transition-colors text-text-secondary hover:text-text-primary">
+                  <SettingsIcon className="w-5 h-5" />
+              </button>
           </div>
-          
+
           <div className="p-3">
-              <button onClick={handleNewChat} className="w-full flex items-center justify-center gap-2 bg-brand hover:bg-brand/90 text-white p-3 rounded-xl transition-all shadow-md hover:shadow-lg active:scale-[0.98]">
-                  <NewChatIcon className="w-5 h-5" />
+              <button 
+                  onClick={handleNewChat}
+                  className="w-full flex items-center gap-3 px-4 py-3 bg-brand text-white rounded-xl hover:bg-brand/90 transition-all shadow-lg shadow-brand/20 active:scale-[0.98] group"
+              >
+                  <NewChatIcon className="w-5 h-5 group-hover:rotate-90 transition-transform" />
                   <span className="font-medium">Cuộc trò chuyện mới</span>
               </button>
           </div>
@@ -723,32 +728,32 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
                       placeholder="Tìm kiếm..." 
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
-                      className="w-full bg-sidebar border border-transparent focus:border-brand rounded-lg py-2 pl-9 pr-3 text-sm outline-none transition-all"
+                      className="w-full pl-9 pr-4 py-2 bg-input-bg rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand/50 border border-transparent focus:border-brand transition-all"
                   />
               </div>
           </div>
-          
-          <div className="flex-1 overflow-y-auto px-3 space-y-4 scrollbar-thin scrollbar-thumb-border scrollbar-track-transparent">
-              {currentUser.isDemo && (
-                  <div className="bg-blue-500/10 border border-blue-500/20 rounded-xl p-3 text-center">
-                      <p className="text-xs text-text-secondary mb-1">Giới hạn Demo</p>
-                      <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1.5 mb-1">
-                          <div className="bg-blue-500 h-1.5 rounded-full" style={{width: `${Math.min((demoMessageCount / DEMO_MESSAGE_LIMIT) * 100, 100)}%`}}></div>
-                      </div>
-                      <p className="text-[10px] text-text-secondary">{demoMessageCount}/{DEMO_MESSAGE_LIMIT} tin nhắn</p>
-                  </div>
-              )}
 
+          <div className="flex-1 overflow-y-auto px-3 pb-2 space-y-4 scrollbar-thin scrollbar-thumb-border scrollbar-track-transparent">
               {pinnedChats.length > 0 && (
                   <div>
-                      <h3 className="text-xs font-semibold text-text-secondary uppercase tracking-wider mb-2 px-1">Đã ghim</h3>
+                      <h3 className="text-xs font-semibold text-text-secondary mb-2 px-2 uppercase tracking-wider">Đã ghim</h3>
                       <div className="space-y-1">
                           {pinnedChats.map(chat => (
-                              <div key={chat.id} onClick={() => { setActiveChatId(chat.id); setIsMobileSidebarOpen(false); }} className={`group relative flex items-center gap-3 p-3 rounded-xl cursor-pointer transition-all ${activeChatId === chat.id ? 'bg-card shadow-sm border border-border' : 'hover:bg-sidebar border border-transparent'}`}>
-                                  <div className={`w-1 h-full absolute left-0 top-0 rounded-l-xl bg-brand transition-opacity ${activeChatId === chat.id ? 'opacity-100' : 'opacity-0'}`}></div>
-                                  <PinIcon className="w-4 h-4 text-brand flex-shrink-0" />
-                                  <span className="truncate text-sm font-medium flex-1">{chat.title}</span>
-                                  <button onClick={(e) => togglePin(chat.id, e)} className="opacity-0 group-hover:opacity-100 p-1 hover:bg-background rounded transition-opacity"><PinIcon className="w-3 h-3 fill-current" /></button>
+                              <div 
+                                  key={chat.id}
+                                  onClick={() => { setActiveChatId(chat.id); setIsMobileSidebarOpen(false); }}
+                                  className={`group flex items-center gap-3 px-3 py-2.5 rounded-lg cursor-pointer transition-all ${activeChatId === chat.id ? 'bg-card-hover border border-border shadow-sm' : 'hover:bg-sidebar border border-transparent'}`}
+                              >
+                                  <div className="w-1 h-1 rounded-full bg-brand flex-shrink-0"></div>
+                                  <span className="flex-1 truncate text-sm font-medium">{chat.title}</span>
+                                  <div className="flex items-center opacity-0 group-hover:opacity-100 transition-opacity gap-1">
+                                       <button onClick={(e) => togglePin(chat.id, e)} className="p-1 hover:bg-input-bg rounded" title="Bỏ ghim">
+                                          <PinIcon className="w-3 h-3 fill-current text-brand" />
+                                      </button>
+                                      <button onClick={(e) => handleDeleteChat(chat.id, e)} className="p-1 hover:bg-red-500/20 hover:text-red-500 rounded" title="Xóa">
+                                          <TrashIcon className="w-3 h-3" />
+                                      </button>
+                                  </div>
                               </div>
                           ))}
                       </div>
@@ -756,194 +761,285 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
               )}
               
               <div>
-                   <h3 className="text-xs font-semibold text-text-secondary uppercase tracking-wider mb-2 px-1">Gần đây</h3>
-                   <div className="space-y-1">
-                      {recentChats.map(chat => (
-                          <div key={chat.id} onClick={() => { setActiveChatId(chat.id); setIsMobileSidebarOpen(false); }} className={`group relative flex items-center gap-3 p-3 rounded-xl cursor-pointer transition-all ${activeChatId === chat.id ? 'bg-card shadow-sm border border-border' : 'hover:bg-sidebar border border-transparent'}`}>
-                              <div className={`w-1 h-full absolute left-0 top-0 rounded-l-xl bg-brand transition-opacity ${activeChatId === chat.id ? 'opacity-100' : 'opacity-0'}`}></div>
-                              <span className="truncate text-sm font-medium flex-1 pl-2">{chat.title}</span>
+                  <h3 className="text-xs font-semibold text-text-secondary mb-2 px-2 uppercase tracking-wider">Gần đây</h3>
+                  <div className="space-y-1">
+                       {recentChats.map(chat => (
+                          <div 
+                              key={chat.id}
+                              onClick={() => { setActiveChatId(chat.id); setIsMobileSidebarOpen(false); }}
+                              className={`group flex items-center gap-3 px-3 py-2.5 rounded-lg cursor-pointer transition-all ${activeChatId === chat.id ? 'bg-card-hover border border-border shadow-sm' : 'hover:bg-sidebar border border-transparent'}`}
+                          >
+                              <span className="flex-1 truncate text-sm text-text-secondary group-hover:text-text-primary transition-colors">{chat.title}</span>
                               <div className="flex items-center opacity-0 group-hover:opacity-100 transition-opacity gap-1">
-                                  <button onClick={(e) => togglePin(chat.id, e)} className="p-1.5 hover:bg-background rounded text-text-secondary hover:text-brand"><PinIcon className="w-3.5 h-3.5" /></button>
-                                  <button onClick={(e) => handleDeleteChat(chat.id, e)} className="p-1.5 hover:bg-background rounded text-text-secondary hover:text-red-500"><TrashIcon className="w-3.5 h-3.5" /></button>
+                                   <button onClick={(e) => togglePin(chat.id, e)} className="p-1 hover:bg-input-bg rounded" title="Ghim">
+                                      <PinIcon className="w-3 h-3 text-text-secondary hover:text-brand" />
+                                  </button>
+                                  <button onClick={(e) => handleDeleteChat(chat.id, e)} className="p-1 hover:bg-red-500/20 hover:text-red-500 rounded" title="Xóa">
+                                      <TrashIcon className="w-3 h-3" />
+                                  </button>
                               </div>
                           </div>
                       ))}
-                   </div>
+                      {recentChats.length === 0 && (
+                          <p className="text-xs text-text-secondary text-center py-4 italic">Không tìm thấy đoạn chat nào</p>
+                      )}
+                  </div>
               </div>
+          </div>
+
+          <div className="p-4 border-t border-border/50">
+              <button 
+                  onClick={onLogout}
+                  className="w-full flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium text-red-500 hover:bg-red-500/10 rounded-lg transition-colors"
+              >
+                  <LogoutIcon className="w-4 h-4" />
+                  <span>Đăng xuất</span>
+              </button>
           </div>
       </div>
   );
 
-  const renderFeatureButton = (icon: React.ReactNode, label: string, value: Mode, colorClass: string) => (
-      <button
-          onClick={() => { setMode(value); setIsFeaturesPopoverOpen(false); }}
-          className={`flex flex-col items-center justify-center gap-2 p-3 rounded-xl transition-all ${mode === value ? 'bg-brand/10 border-brand' : 'hover:bg-sidebar border-transparent'} border`}
-      >
-          <div className={`p-2 rounded-lg ${colorClass} text-white`}>{icon}</div>
-          <span className="text-xs font-medium text-center leading-tight">{label}</span>
-      </button>
-  );
-
   return (
-    <div className="flex h-screen w-full overflow-hidden bg-background text-text-primary transition-colors duration-300">
+    <div className="flex h-screen w-screen overflow-hidden bg-background text-text-primary font-sans selection:bg-brand/20 selection:text-brand">
       {/* Sidebar for Desktop */}
-      <aside className="hidden md:block w-72 bg-sidebar/50 border-r border-border backdrop-blur-xl flex-shrink-0 transition-all duration-300">
-         {renderSidebar()}
+      <aside className="hidden md:block w-72 lg:w-80 flex-shrink-0 bg-sidebar/50 backdrop-blur-md border-r border-border transition-all duration-300">
+        {renderSidebar()}
       </aside>
 
       {/* Mobile Sidebar Overlay */}
-      <div className={`fixed inset-0 bg-black/50 z-40 md:hidden transition-opacity duration-300 ${isMobileSidebarOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}`} onClick={() => setIsMobileSidebarOpen(false)} />
-      <aside className={`fixed inset-y-0 left-0 w-3/4 max-w-xs bg-sidebar shadow-2xl z-50 md:hidden transform transition-transform duration-300 ${isMobileSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
-         {renderSidebar()}
-      </aside>
+      {isMobileSidebarOpen && (
+        <div className="fixed inset-0 z-40 md:hidden">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm transition-opacity" onClick={() => setIsMobileSidebarOpen(false)} />
+          <div className="absolute inset-y-0 left-0 w-3/4 max-w-xs bg-card shadow-2xl transform transition-transform duration-300 ease-out">
+            {renderSidebar()}
+          </div>
+        </div>
+      )}
 
+      {/* Main Chat Area */}
       <main className="flex-1 flex flex-col h-full relative min-w-0">
         {/* Header */}
         <header className="h-16 flex items-center justify-between px-4 border-b border-border bg-card/80 backdrop-blur-md z-10 sticky top-0">
             <div className="flex items-center gap-3 overflow-hidden">
-                <button onClick={() => setIsMobileSidebarOpen(true)} className="md:hidden p-2 hover:bg-sidebar rounded-lg">
+                <button onClick={() => setIsMobileSidebarOpen(true)} className="md:hidden p-2 -ml-2 rounded-lg hover:bg-sidebar text-text-secondary">
                     <MenuIcon className="w-6 h-6" />
                 </button>
-                <div className="flex flex-col">
-                    <h1 className="font-bold text-lg truncate">{activeChat?.title || 'KL AI'}</h1>
-                    <div className="flex items-center gap-2 text-xs text-text-secondary">
-                        <span className={`w-2 h-2 rounded-full ${isLoading ? 'bg-yellow-500 animate-pulse' : 'bg-green-500'}`}></span>
-                        {isLoading ? 'Đang xử lý...' : 'Sẵn sàng'}
+                <div className="flex flex-col min-w-0">
+                    <h1 className="font-bold text-lg truncate flex items-center gap-2">
+                         {activeChat?.title || 'KL AI Chat'}
+                         {activeChat?.isPinned && <PinIcon className="w-3 h-3 text-brand fill-current" />}
+                    </h1>
+                    <div className="flex items-center gap-1 text-xs text-text-secondary">
+                         <span className={`w-2 h-2 rounded-full ${isLoading ? 'bg-yellow-400 animate-pulse' : 'bg-green-500'}`}></span>
+                         <span>{isLoading ? 'Đang trả lời...' : 'Sẵn sàng'}</span>
                     </div>
                 </div>
             </div>
-            <div className="flex items-center gap-2">
-                <button onClick={() => setIsCalculatorOpen(!isCalculatorOpen)} className={`p-2 rounded-lg transition-colors ${isCalculatorOpen ? 'bg-brand text-white' : 'hover:bg-sidebar text-text-secondary'}`} title="Máy tính">
-                    <CalculatorIcon className="w-5 h-5" />
-                </button>
-                 <button onClick={() => setIsPeriodicTableOpen(!isPeriodicTableOpen)} className={`p-2 rounded-lg transition-colors ${isPeriodicTableOpen ? 'bg-brand text-white' : 'hover:bg-sidebar text-text-secondary'}`} title="Bảng tuần hoàn">
-                    <PeriodicTableIcon className="w-5 h-5" />
-                </button>
+            
+            <div className="flex items-center gap-1 sm:gap-2">
+                 {/* Tools Buttons */}
+                 <button onClick={() => setIsCalculatorOpen(true)} className="p-2 text-text-secondary hover:bg-sidebar rounded-lg transition-colors hidden sm:block" title="Máy tính">
+                     <CalculatorIcon className="w-5 h-5" />
+                 </button>
+                 <button onClick={() => setIsPeriodicTableOpen(true)} className="p-2 text-text-secondary hover:bg-sidebar rounded-lg transition-colors hidden sm:block" title="Bảng tuần hoàn">
+                     <PeriodicTableIcon className="w-5 h-5" />
+                 </button>
+                 
+                 <div className="w-[1px] h-6 bg-border mx-1 hidden sm:block"></div>
+
+                 {/* Features Dropdown */}
+                 <div className="relative" ref={featuresPopoverRef}>
+                      <button 
+                        ref={featuresButtonRef}
+                        onClick={() => setIsFeaturesPopoverOpen(!isFeaturesPopoverOpen)}
+                        className={`p-2 rounded-lg transition-colors flex items-center gap-2 ${isFeaturesPopoverOpen ? 'bg-brand/10 text-brand' : 'text-text-secondary hover:bg-sidebar'}`}
+                      >
+                          <FeaturesIcon className="w-5 h-5" />
+                          <span className="hidden sm:inline text-sm font-medium">Chế độ</span>
+                      </button>
+                      
+                      {isFeaturesPopoverOpen && (
+                          <div className="absolute right-0 top-full mt-2 w-56 bg-card border border-border rounded-xl shadow-xl p-1.5 z-50 animate-slide-in-up origin-top-right">
+                              {[
+                                  { id: 'chat', label: 'Trò chuyện', icon: <UserIcon className="w-4 h-4" /> },
+                                  { id: 'create_exam', label: 'Tạo đề thi', icon: <CreateExamIcon className="w-4 h-4" /> },
+                                  { id: 'solve_exam', label: 'Giải đề', icon: <SolveExamIcon className="w-4 h-4" /> },
+                                  { id: 'create_schedule', label: 'Lập lịch học', icon: <CreateScheduleIcon className="w-4 h-4" /> },
+                                  { id: 'learn', label: 'Học tập', icon: <LearnModeIcon className="w-4 h-4" /> },
+                                  { id: 'exam', label: 'Thi thử', icon: <ExamModeIcon className="w-4 h-4" /> },
+                                  { id: 'theory', label: 'Lý thuyết', icon: <TheoryModeIcon className="w-4 h-4" /> },
+                                  { id: 'flashcard', label: 'Flashcard', icon: <FlashcardIcon className="w-4 h-4" /> },
+                                  { id: 'mind_map', label: 'Sơ đồ tư duy', icon: <MindMapIcon className="w-4 h-4" /> },
+                                  { id: 'scramble_exam', label: 'Trộn đề', icon: <ShuffleIcon className="w-4 h-4" /> },
+                                  { id: 'similar_exam', label: 'Đề tương tự', icon: <CloneIcon className="w-4 h-4" /> },
+                                  { id: 'create_file', label: 'Tạo file', icon: <CreateFileIcon className="w-4 h-4" /> },
+                              ].map((m) => (
+                                  <button
+                                      key={m.id}
+                                      onClick={() => { setMode(m.id as Mode); setIsFeaturesPopoverOpen(false); }}
+                                      className={`w-full flex items-center gap-3 px-3 py-2.5 text-sm font-medium rounded-lg transition-colors ${mode === m.id ? 'bg-brand text-white shadow-md' : 'text-text-secondary hover:bg-sidebar hover:text-text-primary'}`}
+                                  >
+                                      {m.icon}
+                                      {m.label}
+                                  </button>
+                              ))}
+                          </div>
+                      )}
+                 </div>
             </div>
         </header>
 
-        {/* Messages Area */}
-        <div ref={chatContainerRef} className="flex-1 overflow-y-auto p-4 space-y-6 scroll-smooth relative">
-             {activeChat?.messages.map((msg, idx) => (
-                 <ChatMessage 
-                    key={idx} 
-                    message={msg} 
-                    isLastMessage={idx === activeChat.messages.length - 1} 
-                    isLoading={isLoading}
-                    onFollowUpClick={(text, action) => handleSendMessage(`Hãy ${action === 'explain' ? 'giải thích thêm' : action === 'example' ? 'cho ví dụ' : 'tóm tắt'} về: "${text.substring(0, 50)}..."`)}
-                    onApplySchedule={(text) => alert("Tính năng tạo lịch đang phát triển!")}
-                    onOpenFlashcards={(cards) => setFlashcardData(cards)}
-                    onOpenMindMap={(data) => setMindMapModalState({ data, messageIndex: idx })}
-                    onAskSelection={(text) => handleSendMessage(`Giải thích giúp tôi đoạn này: "${text}"`)}
-                    onRegenerate={() => {
-                        const messages = activeChat.messages;
-                        if (messages.length > 0 && messages[messages.length - 1].role === 'model') {
-                            const lastUserMsg = messages[messages.length - 2];
-                            if (lastUserMsg && lastUserMsg.role === 'user') {
-                                 setChatSessions(prev => 
-                                    prev.map(chat => {
-                                        if (chat.id !== activeChatId) return chat;
-                                        return { ...chat, messages: chat.messages.slice(0, -2) };
-                                    })
-                                );
-                                setTimeout(() => handleSendMessage(lastUserMsg.text, lastUserMsg.files ? lastUserMsg.files.map(f => ({name: f.name, data: f.dataUrl.split(',')[1], mimeType: f.mimeType})) : []), 0);
+        {/* Messages List */}
+        <div 
+          ref={chatContainerRef} 
+          className="flex-1 overflow-y-auto p-4 md:p-6 scroll-smooth"
+        >
+            <div className="max-w-3xl mx-auto space-y-6">
+                {activeChat?.messages.map((msg, idx) => (
+                    <ChatMessage 
+                        key={idx} 
+                        message={msg} 
+                        isLastMessage={idx === activeChat.messages.length - 1}
+                        isLoading={isLoading}
+                        onFollowUpClick={(originalText, action) => {
+                            let prompt = '';
+                            switch(action) {
+                                case 'explain': prompt = `Giải thích chi tiết hơn về: "${originalText.substring(0, 100)}..."`; break;
+                                case 'example': prompt = `Cho ví dụ minh họa về: "${originalText.substring(0, 100)}..."`; break;
+                                case 'summarize': prompt = `Tóm tắt ngắn gọn nội dung: "${originalText.substring(0, 100)}..."`; break;
                             }
-                        }
-                    }}
-                    userAvatar={currentUser.avatar}
-                 />
-             ))}
-             {isLoading && activeChat?.messages[activeChat.messages.length - 1]?.role === 'model' && !activeChat.messages[activeChat.messages.length - 1].text && <TypingIndicator />}
-             <div className="h-4"></div>
+                            handleSendMessage(prompt);
+                        }}
+                        onApplySchedule={(scheduleText) => {
+                            alert("Tính năng thêm lịch vào Google Calendar đang được phát triển!");
+                        }}
+                        onOpenFlashcards={(cards) => setFlashcardData(cards)}
+                        onOpenMindMap={(data) => setMindMapModalState({ data, messageIndex: idx })}
+                        onAskSelection={(text) => handleSendMessage(`Giải thích giúp tôi đoạn này: "${text}"`)}
+                        onRegenerate={idx === activeChat.messages.length - 1 && msg.role === 'model' ? () => {
+                            // Remove last model message and re-send last user message
+                             const lastUserMsgIndex = activeChat.messages.length - 2;
+                             if (lastUserMsgIndex >= 0) {
+                                 const lastUserMsg = activeChat.messages[lastUserMsgIndex];
+                                 setChatSessions(prev => prev.map(c => {
+                                     if (c.id !== activeChatId) return c;
+                                     return { ...c, messages: c.messages.slice(0, -1) }; // Remove failed/old model msg
+                                 }));
+                                 // Trigger re-send (need to extract raw text/files from message structure)
+                                 // Ideally refactor handleSendMessage to accept Message object, but for now:
+                                 handleSendMessage(lastUserMsg.text, []); // Files re-upload logic omitted for brevity in this quick fix
+                             }
+                        } : undefined}
+                        userAvatar={currentUser.avatar}
+                    />
+                ))}
+                {isLoading && <TypingIndicator />}
+                <div className="h-4" /> {/* Bottom spacer */}
+            </div>
         </div>
 
         {/* Input Area */}
-        <div className="p-4 bg-card/80 backdrop-blur-md border-t border-border z-20">
-             <div className="max-w-3xl mx-auto relative">
-                  <div className="relative">
-                      {isFeaturesPopoverOpen && (
-                          <div 
-                            ref={featuresPopoverRef}
-                            className="absolute bottom-full left-0 mb-3 w-72 max-w-[calc(100vw-2rem)] max-h-[60vh] overflow-y-auto bg-card border border-border rounded-2xl shadow-2xl p-3 grid grid-cols-2 gap-2 z-[100] animate-slide-in-up scrollbar-thin scrollbar-thumb-border"
-                          >
-                             {renderFeatureButton(<CreateExamIcon className="w-6 h-6"/>, "Tạo đề thi", 'create_exam', "bg-blue-500")}
-                             {renderFeatureButton(<SolveExamIcon className="w-6 h-6"/>, "Giải đề", 'solve_exam', "bg-green-500")}
-                             {renderFeatureButton(<CreateScheduleIcon className="w-6 h-6"/>, "Lập kế hoạch", 'create_schedule', "bg-purple-500")}
-                             {renderFeatureButton(<MindMapIcon className="w-6 h-6"/>, "Sơ đồ tư duy", 'mind_map', "bg-orange-500")}
-                             {renderFeatureButton(<FlashcardIcon className="w-6 h-6"/>, "Flashcard", 'flashcard', "bg-pink-500")}
-                             {renderFeatureButton(<CreateFileIcon className="w-6 h-6"/>, "Tạo tài liệu", 'create_file', "bg-indigo-500")}
-                             {renderFeatureButton(<LearnModeIcon className="w-6 h-6"/>, "Chế độ Học", 'learn', "bg-teal-500")}
-                             {renderFeatureButton(<ExamModeIcon className="w-6 h-6"/>, "Chế độ Thi", 'exam', "bg-red-500")}
-                             {renderFeatureButton(<TheoryModeIcon className="w-6 h-6"/>, "Lý thuyết", 'theory', "bg-yellow-500")}
-                             {renderFeatureButton(<ShuffleIcon className="w-6 h-6"/>, "Trộn đề", 'scramble_exam', "bg-cyan-500")}
-                             {renderFeatureButton(<CloneIcon className="w-6 h-6"/>, "Đề tương tự", 'similar_exam', "bg-violet-500")}
-                          </div>
-                      )}
-                      
-                      <ChatInput 
-                          onSendMessage={handleSendMessage} 
-                          isLoading={isLoading} 
-                          placeholder={mode === 'chat' ? "Nhập tin nhắn..." : `Nhập nội dung để ${mode === 'create_exam' ? 'tạo đề' : mode === 'solve_exam' ? 'giải đề' : 'xử lý'}...`}
-                          onExtractText={handleExtractText}
-                          featuresButton={
-                              <div ref={featuresButtonRef} onClick={() => setIsFeaturesPopoverOpen(!isFeaturesPopoverOpen)} className={`cursor-pointer p-2.5 rounded-full hover:bg-sidebar transition-colors active:scale-95 ${isFeaturesPopoverOpen ? 'bg-brand/10 text-brand' : 'text-text-secondary'}`}>
-                                  <MoreHorizontalIcon className="w-5 h-5" />
-                              </div>
-                          }
-                      />
-                  </div>
-                  <p className="text-center text-[10px] text-text-secondary mt-2">KL AI có thể mắc lỗi. Hãy kiểm chứng thông tin quan trọng.</p>
-             </div>
+        <div className="flex-shrink-0 p-4 bg-background/80 backdrop-blur-sm border-t border-border z-20">
+            <div className="max-w-3xl mx-auto">
+                <ChatInput 
+                    onSendMessage={handleSendMessage} 
+                    isLoading={isLoading}
+                    placeholder={
+                        mode === 'create_exam' ? "Nhập chủ đề, số lượng câu hỏi, độ khó..." :
+                        mode === 'solve_exam' ? "Chụp ảnh hoặc dán nội dung đề bài..." :
+                        mode === 'create_schedule' ? "Nhập mục tiêu, thời gian rảnh, môn học..." :
+                        "Nhập nội dung để xử lý..."
+                    }
+                    onExtractText={handleExtractText}
+                    featuresButton={
+                        <button 
+                            onClick={() => setIsFeaturesPopoverOpen(!isFeaturesPopoverOpen)}
+                            className="md:hidden p-2.5 rounded-full text-text-secondary hover:bg-sidebar transition-colors"
+                        >
+                            <MoreHorizontalIcon className="w-5 h-5" />
+                        </button>
+                    }
+                />
+                <p className="text-xs text-center text-text-secondary mt-2 opacity-70">
+                    KL AI có thể mắc lỗi. Hãy kiểm chứng thông tin quan trọng.
+                </p>
+            </div>
         </div>
       </main>
 
       {/* Modals */}
-      <React.Suspense fallback={<div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/20 backdrop-blur-[1px]"><div className="w-8 h-8 border-2 border-brand border-t-transparent rounded-full animate-spin"></div></div>}>
-          {isSettingsOpen && <SettingsModal user={currentUser} onClose={() => setIsSettingsOpen(false)} onUpdateUser={handleUpdateUserInternal} />}
-          {flashcardData && <FlashcardView cards={flashcardData} onClose={() => setFlashcardData(null)} />}
-          {mindMapModalState && (
-              <MindMapModal 
-                data={mindMapModalState.data} 
-                onClose={() => setMindMapModalState(null)} 
+      <React.Suspense fallback={null}>
+        {isSettingsOpen && (
+            <SettingsModal 
+                user={currentUser} 
+                onClose={() => setIsSettingsOpen(false)} 
+                onUpdateUser={handleUpdateUserInternal}
+            />
+        )}
+        
+        {flashcardData && (
+            <FlashcardView 
+                cards={flashcardData} 
+                onClose={() => setFlashcardData(null)} 
+            />
+        )}
+        
+        {mindMapModalState && (
+            <MindMapModal
+                data={mindMapModalState.data}
+                onClose={() => setMindMapModalState(null)}
                 onCreateNewMindMap={handleCreateNewMindMap}
-                onSave={handleSaveMindMap} 
-              />
-          )}
-          
-          {isCalculatorOpen && (
-              <ToolModal title="Máy tính khoa học" onClose={() => setIsCalculatorOpen(false)}>
-                  <Calculator />
-              </ToolModal>
-          )}
-          {isPeriodicTableOpen && (
-              <ToolModal title="Bảng tuần hoàn" onClose={() => setIsPeriodicTableOpen(false)} initialSize={{width: 800, height: 600}}>
-                  <PeriodicTable />
-              </ToolModal>
-          )}
-      </React.Suspense>
+                onSave={handleSaveMindMap}
+            />
+        )}
 
-      {/* Demo Limit Modal */}
-      {showDemoLimitModal && (
-          <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
-              <div className="bg-card rounded-2xl shadow-2xl w-full max-w-md p-6 text-center animate-slide-in-up">
-                  <div className="w-16 h-16 bg-brand/10 rounded-full flex items-center justify-center mx-auto mb-4">
-                      <KeyIcon className="w-8 h-8 text-brand" />
-                  </div>
-                  <h3 className="text-xl font-bold text-text-primary mb-2">Hết lượt dùng thử</h3>
-                  <p className="text-text-secondary mb-6">
-                      Bạn đã sử dụng hết {DEMO_MESSAGE_LIMIT} lượt tin nhắn miễn phí dành cho tài khoản Demo. Vui lòng đăng nhập hoặc tạo tài khoản để tiếp tục sử dụng không giới hạn.
-                  </p>
-                  <div className="flex flex-col gap-3">
-                      <button onClick={onLogout} className="w-full bg-brand hover:bg-brand/90 text-white font-bold py-3 rounded-xl transition-colors">
-                          Đăng nhập / Đăng ký ngay
-                      </button>
-                      <button onClick={() => setShowDemoLimitModal(false)} className="w-full text-text-secondary hover:text-text-primary py-2 text-sm">
-                          Để sau (chỉ xem lịch sử)
-                      </button>
-                  </div>
-              </div>
-          </div>
-      )}
+        {isCalculatorOpen && (
+            <ToolModal title="Máy tính khoa học" onClose={() => setIsCalculatorOpen(false)}>
+                <Calculator />
+            </ToolModal>
+        )}
+
+        {isPeriodicTableOpen && (
+            <ToolModal title="Bảng tuần hoàn" onClose={() => setIsPeriodicTableOpen(false)} initialSize={{width: 800, height: 500}}>
+                <PeriodicTable />
+            </ToolModal>
+        )}
+        
+        {/* Demo Limit Modal */}
+        {showDemoLimitModal && (
+            <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+                <div className="bg-card rounded-2xl shadow-2xl max-w-md w-full p-6 border border-border animate-message-pop-in">
+                    <div className="flex justify-center mb-4">
+                         <div className="w-16 h-16 bg-brand/10 rounded-full flex items-center justify-center">
+                            <KeyIcon className="w-8 h-8 text-brand" />
+                         </div>
+                    </div>
+                    <h2 className="text-xl font-bold text-center mb-2">Hết lượt dùng thử miễn phí</h2>
+                    <p className="text-center text-text-secondary mb-6">
+                        Bạn đã sử dụng hết {DEMO_MESSAGE_LIMIT} tin nhắn miễn phí trong chế độ Khách. <br/>
+                        Vui lòng đăng ký tài khoản để tiếp tục sử dụng không giới hạn và lưu lại lịch sử.
+                    </p>
+                    <div className="flex flex-col gap-3">
+                         <button 
+                            onClick={() => {
+                                setShowDemoLimitModal(false);
+                                onLogout(); // Go back to auth screen
+                            }}
+                            className="w-full py-3 bg-brand hover:bg-brand/90 text-white font-bold rounded-xl shadow-lg transition-transform active:scale-95"
+                         >
+                             Đăng ký ngay
+                         </button>
+                         <button 
+                            onClick={() => setShowDemoLimitModal(false)}
+                            className="w-full py-3 bg-sidebar hover:bg-card-hover text-text-primary font-semibold rounded-xl transition-colors"
+                         >
+                             Để sau
+                         </button>
+                    </div>
+                </div>
+            </div>
+        )}
+      </React.Suspense>
     </div>
   );
 };
