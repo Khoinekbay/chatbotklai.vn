@@ -1,5 +1,3 @@
-
-
 import React, { useRef, useEffect, useState, useImperativeHandle } from 'react';
 import { type MindMapNode } from '../types';
 
@@ -25,6 +23,8 @@ export interface D3Node extends MindMapNode {
   depth: number;
   parent?: D3Node;
   color?: string;
+  image?: string;
+  link?: string;
 }
 
 export interface MindMapViewHandles {
@@ -37,6 +37,7 @@ export interface MindMapViewHandles {
   deleteNodes: (nodeIds: number[]) => void;
   detachNode: (nodeId: number) => void;
   changeColors: (nodeIdToColorMap: Map<number, string | null>) => void;
+  updateNodeData: (nodeId: number, data: Partial<MindMapNode>) => void;
 }
 
 const isColorDark = (hexColor?: string): boolean => {
@@ -82,9 +83,10 @@ const cloneTree = (node: D3Node): D3Node => {
         id: node.id,
         depth: node.depth,
     };
-    if (node.color) {
-        newNode.color = node.color;
-    }
+    if (node.color) newNode.color = node.color;
+    if (node.image) newNode.image = node.image;
+    if (node.link) newNode.link = node.link;
+    
     if (node.x0) newNode.x0 = node.x0;
     if (node.y0) newNode.y0 = node.y0;
     if (node.x) newNode.x = node.x;
@@ -104,6 +106,7 @@ const MindMapView = React.forwardRef<MindMapViewHandles, MindMapViewProps>(({ da
   const containerRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const zoomBehavior = useRef<any>(null);
+  const zoomState = useRef<{ translate: [number, number], scale: number } | null>(null);
   const nodeIdCounter = useRef(0);
   
   const [internalData, setInternalData] = useState<D3Node | null>(null);
@@ -116,6 +119,8 @@ const MindMapView = React.forwardRef<MindMapViewHandles, MindMapViewProps>(({ da
         const d3Node: D3Node = {
             name: node.name,
             color: node.color,
+            image: node.image,
+            link: node.link,
             id: nodeIdCounter.current++,
             x: 0, y: 0, depth: depth,
         };
@@ -169,7 +174,12 @@ const MindMapView = React.forwardRef<MindMapViewHandles, MindMapViewProps>(({ da
     const translateX = (dimensions.width / 2) - ((min_y + treeWidth / 2) * scale) + 60; // Adjust for left-heavy layout
     const translateY = (dimensions.height / 2) - ((min_x + treeHeight / 2) * scale);
 
-    svgSelection.transition().duration(750).call(zoomBehavior.current.translate([translateX, translateY]).scale(scale).event);
+    // Manually update state immediately to prevent race conditions
+    zoomState.current = { translate: [translateX, translateY], scale: scale };
+    
+    // Apply immediately without transition to avoid "snap back" race conditions
+    zoomBehavior.current.translate([translateX, translateY]).scale(scale);
+    svgSelection.call(zoomBehavior.current.event);
   };
 
   // Main D3 Rendering Effect
@@ -192,9 +202,13 @@ const MindMapView = React.forwardRef<MindMapViewHandles, MindMapViewProps>(({ da
             svgSelection.classed("is-dragging", false);
         })
         .on("zoom", () => {
+            const t = d3.event.translate;
+            const s = d3.event.scale;
             if (containerG) {
-                containerG.attr("transform", "translate(" + d3.event.translate + ")scale(" + d3.event.scale + ")");
+                containerG.attr("transform", "translate(" + t + ")scale(" + s + ")");
             }
+            // Persist zoom state to prevent snapping back on re-renders
+            zoomState.current = { translate: t, scale: s };
         });
 
     svgSelection
@@ -205,6 +219,7 @@ const MindMapView = React.forwardRef<MindMapViewHandles, MindMapViewProps>(({ da
         .classed("is-panning", isPanMode)
         .call(zoomBehavior.current)
         .on("click", () => {
+            if (d3.event.defaultPrevented) return; // Prevent click if drag occurred
             if (isPanMode) return;
             onToggleNodeSelection(null, false)
         });
@@ -215,8 +230,20 @@ const MindMapView = React.forwardRef<MindMapViewHandles, MindMapViewProps>(({ da
     root.x0 = height / 2;
     root.y0 = 0;
     
+    // Restore zoom state if available, otherwise center
+    if (zoomState.current) {
+        zoomBehavior.current.translate(zoomState.current.translate).scale(zoomState.current.scale);
+        containerG.attr("transform", "translate(" + zoomState.current.translate + ")scale(" + zoomState.current.scale + ")");
+    } else {
+        // We will center after updating the chart to ensure we have node positions
+    }
+
     updateChart(root, root);
-    centerAndFit(svgSelection, treeLayout);
+    
+    // Only center if no zoom state exists (first render)
+    if (!zoomState.current) {
+        centerAndFit(svgSelection, treeLayout);
+    }
     
     function updateChart(sourceNode: D3Node, rootNode: D3Node) {
         const duration = 500;
@@ -233,6 +260,7 @@ const MindMapView = React.forwardRef<MindMapViewHandles, MindMapViewProps>(({ da
             .attr("class", d => `node node-id-${d.id}`)
             .attr("transform", () => `translate(${sourceNode.y0 || sourceNode.y},${sourceNode.x0 || sourceNode.x})`)
             .on("click", function(d: D3Node) {
+                if (d3.event.defaultPrevented) return; // Prevent click if drag occurred
                 if (isPanMode) return;
                 d3.event.stopPropagation();
                 const isCtrl = d3.event.ctrlKey || d3.event.metaKey;
@@ -240,6 +268,7 @@ const MindMapView = React.forwardRef<MindMapViewHandles, MindMapViewProps>(({ da
             })
             .on("dblclick", function(d: D3Node) {
                 if (isPanMode) return;
+                if (d3.event.defaultPrevented) return;
                 d3.event.preventDefault();
                 d3.event.stopPropagation();
 
@@ -285,6 +314,9 @@ const MindMapView = React.forwardRef<MindMapViewHandles, MindMapViewProps>(({ da
                 const translateX = width / 2 - boundsCenterX * scale;
                 const translateY = height / 2 - boundsCenterY * scale;
 
+                // Manually update state
+                zoomState.current = { translate: [translateX, translateY], scale: scale };
+
                 svgSelection.transition().duration(750)
                     .call(zoomBehavior.current.translate([translateX, translateY]).scale(scale).event);
 
@@ -295,7 +327,7 @@ const MindMapView = React.forwardRef<MindMapViewHandles, MindMapViewProps>(({ da
             });
         
         const foWidth = 180;
-        const foHeight = 100;
+        const foHeight = 120; // Increased slightly to accommodate optional image/link
 
         nodeEnter.append("foreignObject")
             .attr("width", foWidth)
@@ -305,12 +337,18 @@ const MindMapView = React.forwardRef<MindMapViewHandles, MindMapViewProps>(({ da
             .style("overflow", "visible")
             .append("xhtml:div")
               .attr("class", (d: D3Node) => `mindmap-node-body ${d.depth === 0 ? 'is-root' : ''}`)
-              .html((d: D3Node) => renderNodeText(d.name));
+              .html((d: D3Node) => {
+                const imgHtml = d.image ? `<img src="${d.image}" class="mindmap-node-image" draggable="false" />` : '';
+                const linkHtml = d.link ? `<a href="${d.link}" target="_blank" class="mindmap-node-link" onclick="event.stopPropagation()"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:12px;height:12px;"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg></a>` : '';
+                const textHtml = `<div class="node-text">${renderNodeText(d.name)}</div>`;
+                return `${linkHtml}${imgHtml}${textHtml}`;
+              });
         
         const toggle = nodeEnter.append("g")
             .attr("class", "node-toggle")
             .on("click", (d: D3Node) => { 
                 if (isPanMode) return;
+                if (d3.event.defaultPrevented) return;
                 d3.event.stopPropagation(); // Prevent selection when toggling
                 if (d.children) {
                     d._children = d.children;
@@ -351,6 +389,14 @@ const MindMapView = React.forwardRef<MindMapViewHandles, MindMapViewProps>(({ da
                 if (d.depth === 0 && !d.color) return 'var(--user-bubble-text)';
                 return null;
             });
+        
+        // Re-render HTML content on update (allows image/link changes to reflect)
+        node.select(".mindmap-node-body").html((d: D3Node) => {
+             const imgHtml = d.image ? `<img src="${d.image}" class="mindmap-node-image" draggable="false" />` : '';
+             const linkHtml = d.link ? `<a href="${d.link}" target="_blank" class="mindmap-node-link" onclick="event.stopPropagation()"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:12px;height:12px;"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg></a>` : '';
+             const textHtml = `<div class="node-text">${renderNodeText(d.name)}</div>`;
+             return `${linkHtml}${imgHtml}${textHtml}`;
+        });
 
         nodeUpdate.select(".node-toggle")
             .attr("transform", (d: D3Node) => `translate(${d.depth === 0 ? 0 : foWidth/2}, 0)`)
@@ -400,17 +446,17 @@ const MindMapView = React.forwardRef<MindMapViewHandles, MindMapViewProps>(({ da
         return;
     }
 
-    const nodeBody = node.select('.mindmap-node-body');
+    const nodeTextDiv = node.select('.node-text');
     const d = node.datum();
-
     const initialText = d.name;
 
-    nodeBody
+    // Only make the text part editable, not the image
+    nodeTextDiv
       .attr('contentEditable', true)
-      .classed('is-editing', true)
+      .style('outline', 'none')
+      .style('min-width', '20px')
       .on('blur', function() {
         this.contentEditable = false;
-        nodeBody.classed('is-editing', false);
         const newName = this.textContent.trim();
         
         if (newName && newName !== initialText) {
@@ -435,7 +481,7 @@ const MindMapView = React.forwardRef<MindMapViewHandles, MindMapViewProps>(({ da
         }
       });
       
-    const el = nodeBody.node();
+    const el = nodeTextDiv.node();
     el.focus();
     // Move cursor to end
     const range = document.createRange();
@@ -544,6 +590,12 @@ const MindMapView = React.forwardRef<MindMapViewHandles, MindMapViewProps>(({ da
             };
             applyColorToBranch(found.node, color);
         });
+    }),
+    updateNodeData: (nodeId, data) => handleAction(tree => {
+        const found = findNodeAndParent(tree, nodeId);
+        if (found) {
+            Object.assign(found.node, data);
+        }
     }),
     deleteNodes: (nodeIds) => handleAction(tree => {
         const nodesToDelete = nodeIds

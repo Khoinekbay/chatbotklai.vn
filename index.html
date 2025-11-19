@@ -1,3 +1,5 @@
+
+
 <!DOCTYPE html>
 <html lang="vi">
   <head>
@@ -133,60 +135,94 @@
         font-weight: 600;
       }
 
-      /* Styles for Bảng Biến Thiên */
-      .variation-table-container {
+      /* Styles for Bảng Biến Thiên (Variation Table) */
+      /* Supports both the wrapper based class and direct table class */
+      .variation-table-container,
+      .prose table.variation-table {
         display: flex;
         justify-content: center;
-        margin: 1em 0;
-        font-size: 1.1rem; /* Slightly larger font for readability */
+        margin: 1.5em 0;
+        width: 100%;
+        overflow-x: auto;
+        border: none !important;
+        border-radius: 0 !important;
       }
-      .variation-table-container table {
+      
+      /* Reset styles if it was a prose table */
+      .variation-table-container table,
+      .prose table.variation-table {
         border-collapse: collapse;
-        border: 2px solid var(--table-border); /* Thicker border for emphasis */
-        font-family: 'Lora', serif;
-        table-layout: fixed; /* This ensures columns are evenly spaced */
+        border: 1px solid var(--text-primary) !important; 
+        font-family: 'Times New Roman', serif; /* Math textbook font */
+        font-size: 1.15rem;
         width: auto;
+        min-width: 320px;
+        background-color: var(--card) !important;
+        color: var(--text-primary);
+        line-height: 1.5;
+        border-radius: 0 !important;
+        margin: 0 !important;
       }
+      
       .variation-table-container th,
-      .variation-table-container td {
-        border: 1px solid var(--table-border);
-        padding: 0.75rem 1rem; /* More padding */
+      .variation-table-container td,
+      .prose table.variation-table th,
+      .prose table.variation-table td {
+        border: 1px solid var(--text-primary) !important; /* Solid borders */
+        padding: 0.5rem 0.75rem;
         text-align: center;
-        min-width: 5rem; /* Ensure columns have enough space */
-      }
-      .variation-table-container td:first-child,
-      .variation-table-container th:first-child {
-        font-weight: bold;
-        font-style: italic;
-        background-color: var(--sidebar);
-        min-width: 4rem; /* Header column can be a bit narrower */
-        border-right: 2px solid var(--table-border); /* Emphasize header column */
+        vertical-align: middle;
+        white-space: nowrap;
+        background-color: transparent !important; /* Override prose header bg */
+        font-weight: normal; /* Reset header bold */
       }
 
-      /* Styles for Bảng Xét Dấu */
+      /* The first column (Header: x, y', y) */
+      .variation-table-container tr > *:first-child,
+      .prose table.variation-table tr > *:first-child {
+        font-weight: bold;
+        font-style: italic;
+        background-color: transparent;
+        border-right: 3px double var(--text-primary) !important; /* Double border for separation */
+        width: 50px;
+        text-align: center;
+      }
+      /* Ensure spacing for infinity symbols or values */
+      .variation-table-container tr > *:not(:first-child),
+      .prose table.variation-table tr > *:not(:first-child) {
+         min-width: 50px;
+         padding-left: 15px;
+         padding-right: 15px;
+      }
+
+      /* Styles for Bảng Xét Dấu (Sign Table) */
       .sign-table-container {
         display: flex;
         justify-content: center;
-        margin: 1em 0;
+        margin: 1.5em 0;
+        overflow-x: auto;
       }
       .sign-table-container table {
         border-collapse: collapse;
-        border: 1px solid var(--table-border);
-        font-family: 'Inter', sans-serif;
-        table-layout: fixed;
+        border: 1px solid var(--text-primary);
+        font-family: 'Times New Roman', serif;
+        font-size: 1.15rem;
         width: auto;
+        min-width: 250px;
+        background-color: var(--card);
+        color: var(--text-primary);
       }
       .sign-table-container th,
       .sign-table-container td {
-        border: 1px solid var(--table-border);
-        padding: 0.5rem 0.75rem;
+        border: 1px solid var(--text-primary);
+        padding: 0.5rem 1rem;
         text-align: center;
-        min-width: 4rem;
+        vertical-align: middle;
       }
-      .sign-table-container td:first-child,
-      .sign-table-container th:first-child {
-        font-weight: 500; /* medium weight */
-        background-color: var(--sidebar);
+      .sign-table-container td:first-child {
+        font-weight: bold;
+        border-right: 3px double var(--text-primary);
+        background-color: transparent;
       }
 
 
@@ -263,6 +299,10 @@
         word-wrap: break-word;
         color: var(--text-primary);
         outline: none;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        position: relative;
       }
       html.dark .mindmap-node-body {
         box-shadow: 0 2px 5px rgba(0,0,0,0.2);
@@ -296,6 +336,37 @@
       }
       .mindmap-node-toggle-btn:hover {
         opacity: 0.8;
+      }
+      .mindmap-node-image {
+        width: 100%;
+        height: auto;
+        max-height: 80px;
+        object-fit: cover;
+        border-radius: 4px;
+        margin-bottom: 4px;
+        display: block;
+      }
+      .mindmap-node-link {
+        position: absolute;
+        top: -6px;
+        right: -6px;
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 50%;
+        width: 20px;
+        height: 20px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: var(--brand);
+        font-size: 10px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        transition: transform 0.2s;
+        cursor: pointer;
+        z-index: 10;
+      }
+      .mindmap-node-link:hover {
+        transform: scale(1.2);
       }
 
       /* Mind Map Pan/Zoom Styles */

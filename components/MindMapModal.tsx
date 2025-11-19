@@ -3,7 +3,7 @@
 import React, { useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { type MindMapNode } from '../types';
-import { XIcon, ZoomInIcon, ZoomOutIcon, CenterIcon, EditIcon, PlusCircleIcon, TrashIcon, AddSiblingIcon, PaletteIcon, DetachIcon, MindMapIcon, HandIcon } from './Icons';
+import { XIcon, ZoomInIcon, ZoomOutIcon, CenterIcon, EditIcon, PlusCircleIcon, TrashIcon, AddSiblingIcon, PaletteIcon, DetachIcon, MindMapIcon, HandIcon, ImageIcon, LinkIcon } from './Icons';
 import MindMapView, { type MindMapViewHandles, type D3Node } from './MindMapView';
 
 
@@ -49,6 +49,7 @@ const MindMapModal: React.FC<MindMapModalProps> = ({ data, onClose, onCreateNewM
   const [isColorPickerOpen, setIsColorPickerOpen] = useState(false);
   const [isPanMode, setIsPanMode] = useState(false);
   const colorPickerButtonRef = useRef<HTMLButtonElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const singleSelectionNode = selectedNodes.length === 1 ? selectedNodes[0] : null;
 
@@ -75,6 +76,9 @@ const MindMapModal: React.FC<MindMapModalProps> = ({ data, onClose, onCreateNewM
     const deepClone = (node: D3Node): MindMapNode => {
         const newNode: MindMapNode = { name: node.name };
         if (node.color) newNode.color = node.color;
+        if (node.image) newNode.image = node.image;
+        if (node.link) newNode.link = node.link;
+        
         if (node.children) {
             newNode.children = node.children.map(deepClone);
         } else if (node._children) {
@@ -115,6 +119,29 @@ const MindMapModal: React.FC<MindMapModalProps> = ({ data, onClose, onCreateNewM
         mindMapRef.current.changeColors(map);
     }
     setIsColorPickerOpen(false);
+  };
+
+  const handleImageUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file || !singleSelectionNode) return;
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const base64 = e.target?.result as string;
+      mindMapRef.current?.updateNodeData(singleSelectionNode.id, { image: base64 });
+    };
+    reader.readAsDataURL(file);
+    // Reset input
+    event.target.value = '';
+  };
+
+  const handleAddLink = () => {
+    if (!singleSelectionNode) return;
+    const currentLink = singleSelectionNode.link || '';
+    const url = window.prompt("Nhập đường dẫn (URL):", currentLink);
+    if (url !== null) {
+       mindMapRef.current?.updateNodeData(singleSelectionNode.id, { link: url });
+    }
   };
   
   const handleToggleNodeSelection = (node: D3Node | null, isCtrlClick: boolean) => {
@@ -179,10 +206,17 @@ const MindMapModal: React.FC<MindMapModalProps> = ({ data, onClose, onCreateNewM
                 onToggleNodeSelection={handleToggleNodeSelection}
                 isPanMode={isPanMode}
             />
+            <input 
+                type="file" 
+                ref={fileInputRef} 
+                accept="image/*" 
+                className="hidden" 
+                onChange={handleImageUpload} 
+            />
         </div>
 
         <footer className="flex-shrink-0 flex items-center justify-between p-2 border-t border-border">
-          <div className="h-10 flex items-center min-w-[300px] pl-2">
+          <div className="h-10 flex items-center min-w-[300px] pl-2 overflow-x-auto no-scrollbar">
             {selectedNodes.length > 0 && (
                 <div className="flex items-center gap-1 bg-sidebar p-1 rounded-full animate-slide-in-up" style={{animationDuration: '0.2s'}}>
                     {/* Single Selection Actions */}
@@ -190,6 +224,12 @@ const MindMapModal: React.FC<MindMapModalProps> = ({ data, onClose, onCreateNewM
                         <>
                             <ActionButton onClick={handleEdit} title="Sửa nội dung">
                                 <EditIcon className="w-5 h-5" />
+                            </ActionButton>
+                            <ActionButton onClick={() => fileInputRef.current?.click()} title="Thêm/Sửa ảnh">
+                                <ImageIcon className="w-5 h-5" />
+                            </ActionButton>
+                            <ActionButton onClick={handleAddLink} title="Thêm/Sửa liên kết">
+                                <LinkIcon className="w-5 h-5" />
                             </ActionButton>
                         </>
                     )}
@@ -225,11 +265,11 @@ const MindMapModal: React.FC<MindMapModalProps> = ({ data, onClose, onCreateNewM
                 </div>
             )}
             {selectedNodes.length > 0 && (
-                 <span className="text-xs text-text-secondary ml-3">{selectedNodes.length} mục đã chọn</span>
+                 <span className="text-xs text-text-secondary ml-3 whitespace-nowrap">{selectedNodes.length} mục đã chọn</span>
             )}
           </div>
 
-          <div className="flex items-center gap-2 bg-sidebar p-1 rounded-full">
+          <div className="flex items-center gap-2 bg-sidebar p-1 rounded-full flex-shrink-0">
             <button
                 onClick={() => setIsPanMode(p => !p)}
                 className={`p-2 rounded-full transition-colors ${isPanMode ? 'bg-brand-secondary text-brand' : 'text-text-secondary hover:bg-card-hover hover:text-text-primary'}`}

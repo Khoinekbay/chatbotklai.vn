@@ -1,14 +1,14 @@
 
 
-
 import React, { useState, useRef, useEffect } from 'react';
-import { SendIcon, AttachmentIcon, XIcon, MicrophoneIcon, FileIcon } from './Icons';
+import { SendIcon, AttachmentIcon, XIcon, MicrophoneIcon, FileIcon, ScanIcon } from './Icons';
 
 interface ChatInputProps {
   onSendMessage: (text: string, files: { name: string; data: string; mimeType: string }[]) => void;
   isLoading: boolean;
   placeholder: string;
   featuresButton?: React.ReactNode;
+  onExtractText?: (file: { data: string; mimeType: string }) => Promise<string | null>;
 }
 
 // Let TypeScript know about the experimental SpeechRecognition API
@@ -19,24 +19,33 @@ declare global {
     }
 }
 
-const ChatInput: React.FC<ChatInputProps> = ({ onSendMessage, isLoading, placeholder, featuresButton }) => {
+const ChatInput: React.FC<ChatInputProps> = ({ onSendMessage, isLoading, placeholder, featuresButton, onExtractText }) => {
   const [text, setText] = useState('');
   const [files, setFiles] = useState<File[]>([]);
   const [imagePreviewUrls, setImagePreviewUrls] = useState<string[]>([]);
   const [isListening, setIsListening] = useState(false);
+  const [isExtractingText, setIsExtractingText] = useState<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const recognitionRef = useRef<any | null>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // Auto-resize textarea
+  useEffect(() => {
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto';
+      textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 200)}px`;
+    }
+  }, [text]);
 
   useEffect(() => {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
-      console.warn("Speech recognition not supported in this browser.");
       return;
     }
 
     const recognition = new SpeechRecognition();
     recognition.continuous = false;
-    recognition.interimResults = false;
+    recognition.interimResults = true;
     recognition.lang = 'vi-VN';
 
     recognition.onstart = () => {
@@ -44,8 +53,20 @@ const ChatInput: React.FC<ChatInputProps> = ({ onSendMessage, isLoading, placeho
     };
     
     recognition.onresult = (event: any) => {
-      const transcript = event.results[0][0].transcript;
-      setText(prevText => (prevText ? prevText + ' ' : '') + transcript);
+      let interimTranscript = '';
+      let finalTranscript = '';
+
+      for (let i = event.resultIndex; i < event.results.length; ++i) {
+        if (event.results[i].isFinal) {
+          finalTranscript += event.results[i][0].transcript;
+        } else {
+          interimTranscript += event.results[i][0].transcript;
+        }
+      }
+      
+      if (finalTranscript) {
+          setText(prev => prev + (prev ? ' ' : '') + finalTranscript);
+      }
     };
 
     recognition.onend = () => {
@@ -55,6 +76,13 @@ const ChatInput: React.FC<ChatInputProps> = ({ onSendMessage, isLoading, placeho
     recognition.onerror = (event: any) => {
       console.error('Speech recognition error:', event.error);
       setIsListening(false);
+      if (event.error === 'not-allowed' || event.error === 'permission-denied') {
+        alert('Không thể truy cập microphone. Vui lòng cho phép quyền truy cập microphone trong cài đặt trình duyệt để sử dụng tính năng này.');
+      } else if (event.error === 'no-speech') {
+        // Ignore no-speech error, just stop listening
+      } else {
+        // alert('Lỗi nhận dạng giọng nói: ' + event.error);
+      }
     };
 
     recognitionRef.current = recognition;
@@ -66,7 +94,8 @@ const ChatInput: React.FC<ChatInputProps> = ({ onSendMessage, isLoading, placeho
       const reader = new FileReader();
       reader.readAsDataURL(file);
       reader.onload = () => {
-        const base64String = (reader.result as string).split(',')[1];
+        const result = reader.result as string;
+        const base64String = result.split(',')[1];
         resolve({ data: base64String, mimeType: file.type });
       };
       reader.onerror = error => reject(error);
@@ -75,180 +104,207 @@ const ChatInput: React.FC<ChatInputProps> = ({ onSendMessage, isLoading, placeho
 
   const handleRemoveFile = (indexToRemove: number) => {
     const urlToRemove = imagePreviewUrls[indexToRemove];
-    if (urlToRemove && urlToRemove !== 'file_icon') {
+    if (urlToRemove && !urlToRemove.startsWith('data:')) {
         URL.revokeObjectURL(urlToRemove);
     }
-    const newFiles = files.filter((_, index) => index !== indexToRemove);
-    const newUrls = imagePreviewUrls.filter((_, index) => index !== indexToRemove);
-    setFiles(newFiles);
-    setImagePreviewUrls(newUrls);
-    if (newFiles.length === 0 && fileInputRef.current) {
-        fileInputRef.current.value = "";
-    }
-  };
-
-
-  const submitMessage = async () => {
-    if ((text.trim() || files.length > 0) && !isLoading) {
-      const filePayloads = await Promise.all(
-        files.map(async (file) => {
-          const { data, mimeType } = await fileToBase64(file);
-          return { name: file.name, data, mimeType };
-        })
-      );
-      onSendMessage(text, filePayloads);
-      setText('');
-      // Clear all files
-      imagePreviewUrls.forEach(url => {
-        if (url !== 'file_icon') URL.revokeObjectURL(url);
-      });
-      setFiles([]);
-      setImagePreviewUrls([]);
-      if (fileInputRef.current) {
-        fileInputRef.current.value = "";
-      }
-    }
-  };
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    submitMessage();
-  };
-
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      submitMessage();
+    setFiles(prev => prev.filter((_, i) => i !== indexToRemove));
+    setImagePreviewUrls(prev => prev.filter((_, i) => i !== indexToRemove));
+    
+    // Reset file input so same file can be selected again
+    if (fileInputRef.current) {
+        fileInputRef.current.value = '';
     }
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const selectedFiles = e.target.files;
-    if (selectedFiles) {
-        const newFiles = Array.from(selectedFiles);
-        const newUrls = newFiles.map(file => file.type.startsWith('image/') ? URL.createObjectURL(file) : 'file_icon');
-        
-        setFiles(prev => [...prev, ...newFiles]);
-        setImagePreviewUrls(prev => [...prev, ...newUrls]);
+    if (e.target.files && e.target.files.length > 0) {
+      const selectedFiles = Array.from(e.target.files) as File[];
+      
+      const newFiles: File[] = [];
+      const newUrls: string[] = [];
+      
+      selectedFiles.forEach(file => {
+          newFiles.push(file);
+          if (file.type.startsWith('image/')) {
+              newUrls.push(URL.createObjectURL(file));
+          } else {
+              newUrls.push('file_icon');
+          }
+      });
+
+      setFiles(prev => [...prev, ...newFiles]);
+      setImagePreviewUrls(prev => [...prev, ...newUrls]);
     }
   };
 
-  const handleListenToggle = () => {
-    if (!recognitionRef.current) return;
-
+  const toggleListening = () => {
     if (isListening) {
-      recognitionRef.current.stop();
+      recognitionRef.current?.stop();
     } else {
-      recognitionRef.current.start();
+      try {
+          recognitionRef.current?.start();
+      } catch (e) {
+          console.error("Failed to start recognition", e);
+      }
     }
   };
+  
+  const handleExtractTextClick = async (index: number) => {
+      if (!onExtractText) return;
+      const file = files[index];
+      if (!file.type.startsWith('image/')) return;
+      
+      setIsExtractingText(index);
+      try {
+          const base64 = await fileToBase64(file);
+          const extractedText = await onExtractText(base64);
+          if (extractedText) {
+              setText(prev => (prev ? prev + '\n' : '') + extractedText);
+          }
+      } catch (error) {
+          console.error("Extraction failed", error);
+      } finally {
+          setIsExtractingText(null);
+      }
+  };
 
-  const handlePaste = (event: React.ClipboardEvent<HTMLTextAreaElement>) => {
-    const items = event.clipboardData?.items;
-    if (!items) return;
+  const handleSend = async () => {
+    if ((!text.trim() && files.length === 0) || isLoading) return;
 
-    const pastedFiles: File[] = [];
-    for (let i = 0; i < items.length; i++) {
-        if (items[i].type.startsWith('image/')) {
-            const file = items[i].getAsFile();
-            // FIX: Use `instanceof Blob` as a type guard. `getAsFile()` can return `null`,
-            // and this ensures `file` is a valid Blob object before its properties are accessed.
-            if (file instanceof Blob) {
-                const extension = file.type.split('/')[1] || 'png';
-                const imageFile = new File([file], `pasted-image-${Date.now()}-${i}.${extension}`, { type: file.type });
-                pastedFiles.push(imageFile);
-            }
-        }
-    }
+    const fileDataPromises = files.map(file => fileToBase64(file).then(res => ({
+        name: file.name,
+        data: res.data,
+        mimeType: res.mimeType
+    })));
+
+    const processedFiles = await Promise.all(fileDataPromises);
     
-    if (pastedFiles.length > 0) {
-        event.preventDefault();
-        const newImageUrls = pastedFiles.map(file => URL.createObjectURL(file));
-        setFiles(prev => [...prev, ...pastedFiles]);
-        setImagePreviewUrls(prev => [...prev, ...newImageUrls]);
-        event.currentTarget.focus();
-    }
+    onSendMessage(text, processedFiles);
+    setText('');
+    setFiles([]);
+    setImagePreviewUrls([]);
+    if (textareaRef.current) textareaRef.current.style.height = 'auto';
   };
 
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleSend();
+    }
+  };
 
   return (
-    <form onSubmit={handleSubmit} className="flex flex-col gap-2">
+    <div className="relative w-full border border-border rounded-2xl bg-input-bg shadow-sm transition-all focus-within:ring-2 focus-within:ring-brand/50 focus-within:border-brand">
+      {/* File Previews */}
       {files.length > 0 && (
-        <div className="w-full p-2 bg-input-bg rounded-lg border border-border flex flex-wrap gap-3">
-            {files.map((file, index) => (
-                <div key={`${file.name}-${index}`} className="relative w-24 h-24">
-                    {imagePreviewUrls[index] !== 'file_icon' ? (
-                        <img src={imagePreviewUrls[index]} alt="Preview" className="w-full h-full object-cover rounded" />
-                    ) : (
-                        <div className="w-full h-full bg-card rounded flex flex-col items-center justify-center p-1 text-center">
-                            <FileIcon className="w-8 h-8 text-text-secondary" />
-                            <span className="text-xs text-text-secondary mt-1 w-full truncate" title={file.name}>{file.name}</span>
-                        </div>
+        <div className="flex gap-2 p-3 overflow-x-auto border-b border-border scrollbar-thin scrollbar-thumb-border">
+          {files.map((file, index) => (
+            <div key={index} className="relative flex-shrink-0 group w-16 h-16">
+              {imagePreviewUrls[index] === 'file_icon' ? (
+                  <div className="w-full h-full bg-card rounded-lg border border-border flex items-center justify-center">
+                      <FileIcon className="w-8 h-8 text-text-secondary" />
+                  </div>
+              ) : (
+                  <div className="w-full h-full relative">
+                    <img 
+                        src={imagePreviewUrls[index]} 
+                        alt="preview" 
+                        className="w-full h-full object-cover rounded-lg border border-border" 
+                    />
+                    {/* OCR Scan Button */}
+                    {onExtractText && (
+                        <button
+                            onClick={() => handleExtractTextClick(index)}
+                            className="absolute bottom-0 left-0 right-0 bg-black/60 hover:bg-black/80 text-white text-[10px] font-bold py-0.5 text-center rounded-b-lg transition-colors flex items-center justify-center gap-0.5"
+                            title="Trích xuất văn bản từ ảnh"
+                            disabled={isExtractingText === index}
+                        >
+                            {isExtractingText === index ? (
+                                <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                            ) : (
+                                <>
+                                    <ScanIcon className="w-3 h-3" /> Scan
+                                </>
+                            )}
+                        </button>
                     )}
-                    <button 
-                        type="button" 
-                        onClick={() => handleRemoveFile(index)}
-                        className="absolute -top-1.5 -right-1.5 bg-card text-text-primary rounded-full p-0.5 hover:bg-card-hover border border-border"
-                        aria-label="Remove file"
-                    >
-                        <XIcon className="w-4 h-4" />
-                    </button>
-                </div>
-            ))}
+                  </div>
+              )}
+              <button 
+                onClick={() => handleRemoveFile(index)}
+                className="absolute -top-2 -right-2 bg-card text-text-primary rounded-full p-0.5 shadow-md border border-border hover:bg-red-500 hover:text-white transition-colors z-10"
+              >
+                <XIcon className="w-3 h-3" />
+              </button>
+            </div>
+          ))}
         </div>
       )}
-      <div className="flex items-center gap-3">
-        {featuresButton}
-        <input
-            type="file"
+
+      <textarea
+        ref={textareaRef}
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        onKeyDown={handleKeyDown}
+        placeholder={placeholder}
+        disabled={isLoading}
+        rows={1}
+        className="w-full bg-transparent border-none focus:ring-0 p-4 text-base resize-none max-h-[200px] placeholder-text-secondary/70"
+      />
+
+      <div className="flex items-center justify-between p-2 pl-3">
+        <div className="flex items-center gap-1 md:gap-2">
+          {/* Features Button (Passed from Parent) */}
+          {featuresButton}
+          
+          {/* File Attachment */}
+          <input 
+            type="file" 
+            multiple 
             ref={fileInputRef}
-            onChange={handleFileChange}
-            accept="image/*,application/pdf,.doc,.docx,text/plain"
-            className="hidden"
-            id="file-upload"
-            multiple
-        />
-        <button
-            type="button"
+            onChange={handleFileChange} 
+            className="hidden" 
+          />
+          <button 
             onClick={() => fileInputRef.current?.click()}
-            disabled={isLoading}
-            className="p-3 bg-card-hover rounded-full hover:bg-border focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-background focus:ring-brand disabled:opacity-50 transition-colors"
-            aria-label="Đính kèm tệp"
-        >
-            <AttachmentIcon className="w-6 h-6 text-text-secondary" />
-        </button>
-        <button
-            type="button"
-            onClick={handleListenToggle}
-            disabled={isLoading}
-            className={`p-3 rounded-full focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-background focus:ring-brand disabled:opacity-50 transition-colors ${
-                isListening ? 'bg-red-500 text-white animate-pulse' : 'bg-card-hover hover:bg-border text-text-secondary'
-            }`}
-            aria-label={isListening ? "Dừng ghi âm" : "Ghi âm giọng nói"}
-        >
-            <MicrophoneIcon className="w-6 h-6" />
-        </button>
-        <textarea
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            onKeyDown={handleKeyDown}
-            onPaste={handlePaste}
-            placeholder={placeholder}
-            rows={1}
-            disabled={isLoading}
-            className="flex-1 bg-input-bg border border-border rounded-lg p-3 text-text-primary placeholder-text-secondary focus:ring-2 focus:ring-brand focus:outline-none resize-none transition-all duration-200 disabled:opacity-50"
-            style={{ maxHeight: '150px' }}
-        />
-        <button
-            type="submit"
-            disabled={isLoading || (!text.trim() && files.length === 0)}
-            className="bg-brand text-white p-3 rounded-full transform hover:opacity-90 hover:scale-110 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-background focus:ring-brand disabled:bg-slate-400 dark:disabled:bg-slate-600 disabled:cursor-not-allowed transition-all duration-200"
-            aria-label="Gửi tin nhắn"
-        >
-            <SendIcon className="w-6 h-6" />
-        </button>
+            className="p-2.5 rounded-full text-text-secondary hover:bg-sidebar transition-colors active:scale-95"
+            title="Đính kèm tệp"
+          >
+            <AttachmentIcon className="w-5 h-5" />
+          </button>
+        </div>
+        
+        <div className="flex items-center gap-2">
+            {/* Microphone */}
+            {window.SpeechRecognition || window.webkitSpeechRecognition ? (
+                <button 
+                    onClick={toggleListening}
+                    className={`p-2.5 rounded-full transition-all active:scale-95 ${isListening ? 'bg-red-500 text-white animate-pulse' : 'text-text-secondary hover:bg-sidebar'}`}
+                    title={isListening ? "Đang nghe..." : "Nhập bằng giọng nói"}
+                >
+                    <MicrophoneIcon className="w-5 h-5" />
+                </button>
+            ) : null}
+
+            {/* Send Button */}
+            <button
+                onClick={handleSend}
+                disabled={(!text.trim() && files.length === 0) || isLoading}
+                className={`p-2.5 rounded-xl transition-all duration-200 flex items-center justify-center shadow-sm ${
+                (!text.trim() && files.length === 0) || isLoading
+                    ? 'bg-sidebar text-text-secondary cursor-not-allowed'
+                    : 'bg-brand text-white hover:bg-brand/90 active:scale-95 shadow-brand/20'
+                }`}
+            >
+                {isLoading ? (
+                    <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                ) : (
+                    <SendIcon className="w-5 h-5" />
+                )}
+            </button>
+        </div>
       </div>
-    </form>
+    </div>
   );
 };
 

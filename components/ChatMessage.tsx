@@ -1,8 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { type Message, type MindMapNode } from '../types';
+import { type Message, type MindMapNode, type FollowUpAction } from '../types';
 import { UserIcon, AngryBotIcon, SpeakerIcon, ShareIcon, CheckIcon, BellPlusIcon, FlashcardIcon, FileIcon, DownloadIcon, MindMapIcon, ThumbUpIcon, ThumbDownIcon, HelpCircleIcon, RegenerateIcon, ChevronUpIcon, ExplainIcon, ExampleIcon, SummarizeIcon, ChevronDownIcon } from './Icons';
-import { type FollowUpAction } from '../App';
 
 
 // Let TypeScript know about the objects on the window
@@ -103,7 +102,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, isLastMessage = fals
   const messageId = useRef(`msg-${Math.random().toString(36).substring(2, 9)}`); // Unique ID for this message instance
 
 
-  // Effect for the "typing" animation
+  // Effect 1: Typing Animation
   useEffect(() => {
     if (timeoutRef.current) {
       clearTimeout(timeoutRef.current);
@@ -151,30 +150,38 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, isLastMessage = fals
     };
   }, [isSpeaking]);
 
+  // Effect 2: DOM Manipulations (Graphs, MathJax, Tables)
+  // Runs on every render where content is present to ensure they persist after React re-renders.
   useEffect(() => {
-    const isStableBotMessage = message.role === 'model' && (!isLastMessage || !isLoading);
-    if (contentRef.current && isStableBotMessage) {
-        // Typeset MathJax
-        if (window.MathJax) {
-            window.MathJax.typesetPromise().catch(err => console.error('MathJax typesetting failed:', err));
-        }
-
-        // Render graphs
+    if (contentRef.current && (!isLastMessage || !isLoading || displayedText)) {
+        
+        // 1. Render graphs
         const graphElements = contentRef.current.querySelectorAll('.graph-container');
         graphElements.forEach(el => {
-            if (el.innerHTML) return; // Don't re-render if it already has content
+            // Always try to re-render the graph because dangerouslySetInnerHTML might have wiped the canvas
+            el.innerHTML = ''; 
             const functionDataString = el.getAttribute('data-functions');
             if (functionDataString) {
                 try {
                     const functionData = JSON.parse(functionDataString);
                     if (Array.isArray(functionData) && functionData.length > 0 && window.functionPlot) {
                         const containerWidth = el.clientWidth || 350;
+                        
+                        // Inject scope for 'e' to fix "symbol e is undefined"
+                        const dataWithScope = functionData.map((d: any) => ({
+                            ...d,
+                            scope: {
+                                ...d.scope,
+                                e: Math.E
+                            }
+                        }));
+
                         window.functionPlot({
                             target: `#${el.id}`,
                             width: containerWidth,
                             height: Math.min(containerWidth * 0.75, 400),
                             grid: true,
-                            data: functionData
+                            data: dataWithScope
                         });
                     }
                 } catch (e) {
@@ -185,6 +192,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, isLastMessage = fals
             }
         });
         
+        // 2. Process Custom Tables (BBT, BSD)
         const processCustomTable = (lang: string, containerClass: string) => {
             const elements = contentRef.current!.querySelectorAll(`code.language-${lang}`);
             elements.forEach(codeElement => {
@@ -198,9 +206,18 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, isLastMessage = fals
                 const headerLine = lines[0];
                 const bodyLines = lines.slice(2);
 
-                const headers = headerLine.split('|').slice(1, -1).map(h => `<th>${h.trim()}</th>`).join('');
+                // Function to parse cell content (bold, italic, etc.) but preserve LaTeX
+                const parseCell = (text: string) => {
+                    let t = text.trim();
+                    // Simple formatting replacement
+                    t = t.replace(/\*\*(.*?)\*\*/g, '<b>$1</b>');
+                    t = t.replace(/\*(.*?)\*/g, '<i>$1</i>');
+                    return t;
+                };
+
+                const headers = headerLine.split('|').slice(1, -1).map(h => `<th>${parseCell(h)}</th>`).join('');
                 const rows = bodyLines.map(rowStr => {
-                    const cells = rowStr.split('|').slice(1, -1).map(c => `<td>${c.trim()}</td>`).join('');
+                    const cells = rowStr.split('|').slice(1, -1).map(c => `<td>${parseCell(c)}</td>`).join('');
                     return `<tr>${cells}</tr>`;
                 }).join('');
 
@@ -214,13 +231,37 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, isLastMessage = fals
             });
         };
         
-        // Render Bảng Biến Thiên
+        // Render Bảng Biến Thiên from code blocks
         processCustomTable('bbt', 'variation-table-container');
-
-        // Render Bảng Xét Dấu
+        // Render Bảng Xét Dấu from code blocks
         processCustomTable('bsd', 'sign-table-container');
 
-        // --- START: Code Block Enhancements ---
+        // 3. Auto-detect standard tables that look like "Bảng Biến Thiên"
+        // Sometimes the model outputs a standard markdown table instead of a code block.
+        const standardTables = contentRef.current.querySelectorAll('.table-wrapper table');
+        standardTables.forEach(table => {
+             const firstHeader = table.querySelector('thead th:first-child');
+             const secondRowHeader = table.querySelector('tbody tr:first-child td:first-child');
+
+             // Heuristic: First col is 'x', second row starts with y' or f'(x) or y
+             if (firstHeader && (firstHeader.textContent?.trim() === 'x') && 
+                 secondRowHeader && (['y\'', "f'(x)", 'y'].includes(secondRowHeader.textContent?.trim() || ''))) {
+                  
+                  table.classList.add('variation-table');
+                  const wrapper = table.closest('.table-wrapper');
+                  if (wrapper) {
+                      wrapper.classList.add('variation-table-container');
+                      wrapper.classList.remove('table-wrapper'); // Remove standard styling wrapper
+                  }
+             }
+        });
+
+        // 4. Typeset MathJax
+        if (window.MathJax) {
+            window.MathJax.typesetPromise().catch(err => console.error('MathJax typesetting failed:', err));
+        }
+
+        // 5. Code Block Enhancements
         const preElements = contentRef.current.querySelectorAll('pre');
         const MAX_CODE_HEIGHT = 300; // in pixels
 
@@ -228,7 +269,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, isLastMessage = fals
             // Avoid processing blocks that have already been enhanced
             if (pre.parentElement?.classList.contains('code-block-wrapper')) return;
 
-            // 1. Syntax Highlighting
+            // Syntax Highlighting
             const codeElement = pre.querySelector('code');
             if (codeElement && window.hljs) {
                 try {
@@ -244,7 +285,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, isLastMessage = fals
             pre.parentNode?.replaceChild(wrapper, pre);
             wrapper.appendChild(pre);
             
-            // 2. Add Copy Button
+            // Add Copy Button
             if (!pre.querySelector('.copy-code-button')) {
                 const button = document.createElement('button');
                 button.className = 'copy-code-button';
@@ -273,10 +314,11 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, isLastMessage = fals
                 pre.appendChild(button);
             }
 
-            // 3. Add Collapsing logic for long code blocks
+            // Add Collapsing logic
+            // We need a slight delay to ensure layout is done so scrollHeight is correct
             setTimeout(() => {
                 const needsCollapsing = pre.scrollHeight > MAX_CODE_HEIGHT;
-                if (needsCollapsing) {
+                if (needsCollapsing && !wrapper.querySelector('.show-more-button')) {
                     pre.classList.add('is-collapsible');
                     pre.style.maxHeight = `${MAX_CODE_HEIGHT}px`;
 
@@ -303,9 +345,10 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, isLastMessage = fals
                 }
             }, 50);
         });
-        // --- END: Code Block Enhancements ---
     }
-  }, [displayedText, isLastMessage, isLoading, message.role]);
+  }, [displayedText, isLastMessage, isLoading, feedback, isSpeaking, isCopied]); 
+  // Dependency array includes interaction states (feedback, isSpeaking, etc) 
+  // because they trigger re-renders which wipe dangerouslySetInnerHTML content.
 
   useEffect(() => {
     const handleMouseUp = () => {
@@ -429,7 +472,10 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, isLastMessage = fals
                 const parseRangeValue = (val: string): number => {
                     const cleanedVal = val.trim().toLowerCase().replace(/π/g, 'pi');
                     try {
-                        const expression = cleanedVal.replace(/\bpi\b/g, `(${Math.PI})`);
+                        let expression = cleanedVal.replace(/\bpi\b/g, `(${Math.PI})`);
+                        // Add support for e
+                        expression = expression.replace(/\be\b/g, `(${Math.E})`);
+
                         // Allow only a safe subset of characters
                         if (/^[-()\d\s*+./]+$/.test(expression)) {
                             const result = new Function(`return ${expression}`)();
@@ -498,8 +544,9 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, isLastMessage = fals
   const IconComponent = isUser ? UserIcon : AngryBotIcon;
   const iconClasses = isUser ? 'text-brand' : 'text-amber-400';
   const showFollowUpActions = !isUser && (!isLastMessage || !isLoading) && message.text && onFollowUpClick && !message.mindMapData && !message.isError;
-  const showApplyScheduleButton = !isUser && (!isLastMessage || !isLoading) && message.text.includes('|') && message.text.includes('---') && onApplySchedule;
-  const showOpenFlashcardsButton = !isUser && message.flashcards && message.flashcards.length > 0 && onOpenFlashcards;
+  const showApplyScheduleButton = !isUser && (!isLastMessage || !isLoading) && message.mode === 'create_schedule' && onApplySchedule;
+  // Refined logic for flashcards button: only show if mode is 'flashcard'
+  const showOpenFlashcardsButton = !isUser && message.flashcards && message.flashcards.length > 0 && onOpenFlashcards && message.mode === 'flashcard';
   const showDownloadButton = !isUser && message.fileToDownload && (!isLastMessage || !isLoading);
   const showOpenMindMapButton = !isUser && message.mindMapData && onOpenMindMap && (!isLastMessage || !isLoading);
 

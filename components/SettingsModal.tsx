@@ -1,3 +1,4 @@
+
 import React, { useState, useRef } from 'react';
 import { type User } from '../types';
 import { XIcon, SunIcon, MoonIcon, SettingsIcon, UserIcon, KeyIcon } from './Icons';
@@ -82,16 +83,11 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ user, onClose, onUpdateUs
 
     setIsPasswordLoading(true);
     try {
-        // In a real app, this would be a backend call
         await new Promise(res => setTimeout(res, 500));
         // MOCK: Check if current password is "wrong_password" to simulate error
         if (currentPassword === 'wrong_password') {
             throw new Error('Mật khẩu hiện tại không đúng.');
         }
-
-        // MOCK: On success, update the user object (in a real app, backend handles this)
-        // onUpdateUser({ password: newPassword }); // This is conceptual, don't send new password to onUpdateUser
-
         setSuccessMessage('Đổi mật khẩu thành công!');
         setCurrentPassword('');
         setNewPassword('');
@@ -106,9 +102,13 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ user, onClose, onUpdateUs
   const TabButton: React.FC<{ tabId: Tab; label: string; icon: React.ReactNode }> = ({ tabId, label, icon }) => (
     <button
         onClick={() => setActiveTab(tabId)}
-        className={`flex items-center gap-3 w-full px-3 py-2.5 text-sm font-medium rounded-lg text-left transition-colors ${
-            activeTab === tabId ? 'bg-card-hover text-text-primary' : 'text-text-secondary hover:bg-card-hover hover:text-text-primary'
-        }`}
+        className={`flex items-center justify-center md:justify-start gap-2 md:gap-3 px-4 py-3 md:py-2.5 text-sm font-medium rounded-lg transition-all whitespace-nowrap border-b-2 md:border-b-0 md:border-l-2
+            ${activeTab === tabId 
+                ? 'border-brand text-brand bg-brand/5 md:bg-card-hover md:text-text-primary md:border-brand' 
+                : 'border-transparent text-text-secondary hover:text-text-primary hover:bg-card-hover'
+            }
+            flex-1 md:flex-none
+        `}
     >
         {icon}
         <span>{label}</span>
@@ -117,7 +117,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ user, onClose, onUpdateUs
 
   const SettingItem: React.FC<{ title: string; description?: string; children: React.ReactNode }> = ({ title, description, children }) => (
     <div className="py-5 border-b border-border last:border-b-0">
-        <h4 className="text-md font-semibold text-text-primary">{title}</h4>
+        <h4 className="text-base font-semibold text-text-primary">{title}</h4>
         {description && <p className="text-sm text-text-secondary mt-1 mb-3">{description}</p>}
         <div className="mt-3">{children}</div>
     </div>
@@ -129,31 +129,31 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ user, onClose, onUpdateUs
         return (
           <div className="divide-y divide-border">
             <SettingItem title="Chế độ màu" description="Tùy chỉnh giao diện sáng hoặc tối cho ứng dụng.">
-                <div className="flex items-center gap-2 flex-wrap">
-                    <button onClick={() => handleUpdate({ theme: 'light' })} className={`px-4 py-2 text-sm rounded-lg transition-colors duration-200 flex items-center gap-2 ${ (user.theme || 'light') === 'light' ? 'bg-brand text-white font-semibold' : 'bg-input-bg hover:bg-border' }`}>
+                <div className="flex items-center gap-3">
+                    <button onClick={() => handleUpdate({ theme: 'light' })} className={`flex-1 md:flex-none px-4 py-2.5 text-sm rounded-lg transition-colors duration-200 flex items-center justify-center gap-2 border border-transparent ${ (user.theme || 'light') === 'light' ? 'bg-brand text-white font-semibold shadow-md' : 'bg-input-bg hover:bg-border border-border' }`}>
                        <SunIcon className="w-4 h-4" /> Sáng
                     </button>
-                     <button onClick={() => handleUpdate({ theme: 'dark' })} className={`px-4 py-2 text-sm rounded-lg transition-colors duration-200 flex items-center gap-2 ${ (user.theme || 'light') === 'dark' ? 'bg-brand text-white font-semibold' : 'bg-input-bg hover:bg-border' }`}>
+                     <button onClick={() => handleUpdate({ theme: 'dark' })} className={`flex-1 md:flex-none px-4 py-2.5 text-sm rounded-lg transition-colors duration-200 flex items-center justify-center gap-2 border border-transparent ${ (user.theme || 'light') === 'dark' ? 'bg-brand text-white font-semibold shadow-md' : 'bg-input-bg hover:bg-border border-border' }`}>
                        <MoonIcon className="w-4 h-4" /> Tối
                     </button>
                 </div>
             </SettingItem>
             <SettingItem title="Ảnh nền cuộc trò chuyện" description="Cá nhân hóa giao diện chat bằng ảnh nền của riêng bạn.">
                 <div className="flex items-center gap-2">
-                    <label htmlFor="bg-upload" className="cursor-pointer px-4 py-2 text-sm rounded-lg bg-input-bg hover:bg-border transition-colors font-medium"> Tải ảnh lên </label>
+                    <label htmlFor="bg-upload" className="cursor-pointer px-4 py-2 text-sm rounded-lg bg-input-bg hover:bg-border transition-colors font-medium border border-border"> Tải ảnh lên </label>
                     <input id="bg-upload" ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleFileChange} />
                     {user.backgroundUrl && (
                         <button onClick={handleRemoveBackground} className="px-4 py-2 text-sm rounded-lg bg-red-500/10 text-red-500 hover:bg-red-500/20 transition-colors font-medium"> Xóa ảnh </button>
                     )}
                 </div>
                 {user.backgroundUrl && (
-                    <div className="mt-4"><div className="w-full h-24 rounded-lg bg-cover bg-center border border-border" style={{backgroundImage: `url(${user.backgroundUrl})`}}></div></div>
+                    <div className="mt-4"><div className="w-full h-32 rounded-lg bg-cover bg-center border border-border shadow-sm" style={{backgroundImage: `url(${user.backgroundUrl})`}}></div></div>
                 )}
             </SettingItem>
             <SettingItem title="Font chữ" description="Chọn font chữ hiển thị trong toàn bộ ứng dụng.">
-                <div className="flex items-center gap-2 flex-wrap">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                     {FONTS.map(font => (
-                        <button key={font.name} onClick={() => handleUpdate({ fontPreference: font.value })} className={`px-4 py-2 text-sm rounded-lg transition-colors duration-200 ${ (user.fontPreference || DEFAULT_FONT) === font.value ? 'bg-brand text-white font-semibold' : 'bg-input-bg hover:bg-border' }`} style={{ fontFamily: font.value }}>
+                        <button key={font.name} onClick={() => handleUpdate({ fontPreference: font.value })} className={`px-4 py-2.5 text-sm rounded-lg transition-colors duration-200 border border-transparent ${ (user.fontPreference || DEFAULT_FONT) === font.value ? 'bg-brand text-white font-semibold shadow-md' : 'bg-input-bg hover:bg-border border-border' }`} style={{ fontFamily: font.value }}>
                            {font.name}
                         </button>
                     ))}
@@ -165,9 +165,9 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ user, onClose, onUpdateUs
         return (
           <div className="divide-y divide-border">
             <SettingItem title="Avatar" description="Chọn một emoji để làm ảnh đại diện của bạn.">
-                <div className="grid grid-cols-6 sm:grid-cols-8 gap-2">
+                <div className="grid grid-cols-4 sm:grid-cols-8 gap-3">
                     {AVATARS.map(avatar => (
-                      <button key={avatar} onClick={() => handleUpdate({ avatar })} className={`text-3xl rounded-full aspect-square flex items-center justify-center transition-transform duration-150 hover:scale-110 ${user.avatar === avatar ? 'bg-brand-secondary ring-2 ring-brand' : 'bg-input-bg'}`} aria-label={`Chọn avatar ${avatar}`}>
+                      <button key={avatar} onClick={() => handleUpdate({ avatar })} className={`text-3xl rounded-full aspect-square flex items-center justify-center transition-all duration-200 hover:scale-110 ${user.avatar === avatar ? 'bg-brand-secondary ring-4 ring-brand/30' : 'bg-input-bg hover:bg-border'}`} aria-label={`Chọn avatar ${avatar}`}>
                         {avatar}
                       </button>
                     ))}
@@ -175,13 +175,13 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ user, onClose, onUpdateUs
                 {user.avatar && (<button onClick={() => handleUpdate({ avatar: '' })} className="text-sm text-text-secondary hover:text-red-500 underline mt-4"> Xóa avatar </button> )}
             </SettingItem>
             <SettingItem title="Vai trò AI" description="Xác định vai trò của AI để nhận được phản hồi phù hợp nhất.">
-                <div className="flex items-center gap-2 flex-wrap">
-                    {ROLES.map(p => ( <button key={p.value} onClick={() => handleUpdate({ aiRole: p.value })} className={`px-4 py-2 text-sm rounded-lg transition-colors duration-200 ${ (user.aiRole || DEFAULT_ROLE) === p.value ? 'bg-brand text-white font-semibold' : 'bg-input-bg hover:bg-border' }`}> {p.name} </button> ))}
+                <div className="flex flex-col sm:flex-row gap-2">
+                    {ROLES.map(p => ( <button key={p.value} onClick={() => handleUpdate({ aiRole: p.value })} className={`flex-1 px-4 py-2.5 text-sm rounded-lg transition-colors duration-200 border border-transparent ${ (user.aiRole || DEFAULT_ROLE) === p.value ? 'bg-brand text-white font-semibold shadow-md' : 'bg-input-bg hover:bg-border border-border' }`}> {p.name} </button> ))}
                 </div>
             </SettingItem>
             <SettingItem title="Giọng văn AI" description="Điều chỉnh phong cách ngôn ngữ của AI.">
-                <div className="flex items-center gap-2 flex-wrap">
-                    {TONES.map(p => ( <button key={p.value} onClick={() => handleUpdate({ aiTone: p.value })} className={`px-4 py-2 text-sm rounded-lg transition-colors duration-200 ${ (user.aiTone || DEFAULT_TONE) === p.value ? 'bg-brand text-white font-semibold' : 'bg-input-bg hover:bg-border' }`} > {p.name} </button> ))}
+                <div className="grid grid-cols-2 gap-2">
+                    {TONES.map(p => ( <button key={p.value} onClick={() => handleUpdate({ aiTone: p.value })} className={`px-4 py-2.5 text-sm rounded-lg transition-colors duration-200 border border-transparent ${ (user.aiTone || DEFAULT_TONE) === p.value ? 'bg-brand text-white font-semibold shadow-md' : 'bg-input-bg hover:bg-border border-border' }`} > {p.name} </button> ))}
                 </div>
             </SettingItem>
           </div>
@@ -220,35 +220,45 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ user, onClose, onUpdateUs
 
   return (
     <div 
-      className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 animate-slide-in-up"
-      style={{ animationDuration: '0.3s' }}
-      onClick={onClose}
+      className="fixed inset-0 z-50 flex items-end md:items-center justify-center sm:p-4"
       role="dialog"
       aria-modal="true"
       aria-labelledby="settings-title"
     >
       <div 
-        className="bg-card rounded-2xl shadow-xl w-full max-w-4xl h-full max-h-[75vh] m-4 text-text-primary border border-border flex overflow-hidden"
+        className="absolute inset-0 bg-black/60 backdrop-blur-sm transition-opacity" 
+        onClick={onClose} 
+      />
+      
+      <div 
+        className="relative bg-card w-full h-full md:h-auto md:max-h-[85vh] md:max-w-4xl md:rounded-2xl shadow-xl flex flex-col md:flex-row overflow-hidden animate-slide-in-up"
         onClick={(e) => e.stopPropagation()}
       >
-        <aside className="w-64 border-r border-border p-4 flex flex-col">
-            <h2 id="settings-title" className="text-xl font-bold px-3 pb-4">Cài đặt</h2>
-            <nav className="flex flex-col gap-1">
+        {/* Mobile Header with Tabs */}
+        <header className="md:w-64 flex-shrink-0 bg-sidebar/50 md:bg-card/50 border-b md:border-b-0 md:border-r border-border flex flex-col">
+            <div className="flex items-center justify-between p-4">
+                 <h2 id="settings-title" className="text-lg md:text-xl font-bold">Cài đặt</h2>
+                 <button onClick={onClose} className="p-2 rounded-full hover:bg-card-hover active:bg-card-hover/80 transition-colors md:hidden" aria-label="Đóng">
+                    <XIcon className="w-6 h-6 text-text-primary" />
+                </button>
+            </div>
+            
+            <nav className="flex md:flex-col overflow-x-auto no-scrollbar px-2 md:px-0 md:pb-0">
                 <TabButton tabId="general" label="Chung" icon={<SettingsIcon className="w-5 h-5" />} />
                 <TabButton tabId="personalization" label="Cá nhân hóa" icon={<UserIcon className="w-5 h-5" />} />
                 <TabButton tabId="account" label="Tài khoản" icon={<KeyIcon className="w-5 h-5" />} />
             </nav>
-        </aside>
+        </header>
 
-        <main className="flex-1 overflow-y-auto">
-            <div className="p-8">
+        <main className="flex-1 overflow-y-auto relative bg-background md:bg-transparent">
+            <div className="p-4 md:p-8 pb-20 md:pb-8 max-w-2xl mx-auto md:max-w-none">
               {renderContent()}
             </div>
+            {/* Desktop Close Button */}
+            <button onClick={onClose} className="hidden md:block absolute top-4 right-4 p-1.5 rounded-full hover:bg-card-hover bg-card/50 backdrop-blur-sm transition-colors" aria-label="Đóng">
+                <XIcon className="w-5 h-5" />
+            </button>
         </main>
-
-        <button onClick={onClose} className="absolute top-4 right-4 p-1.5 rounded-full hover:bg-card-hover" aria-label="Đóng">
-          <XIcon className="w-5 h-5" />
-        </button>
       </div>
     </div>
   );

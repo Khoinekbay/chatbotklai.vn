@@ -1,14 +1,10 @@
-
-
-
-
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { GoogleGenAI, Chat, Part, Modality } from '@google/genai';
+import { GoogleGenAI, Chat } from '@google/genai';
 import { type Message, type ChatSession, type User, type MindMapNode, type Mode, type FollowUpAction } from './types';
 import ChatMessage from './components/ChatMessage';
 import ChatInput from './components/ChatInput';
 import TypingIndicator from './components/TypingIndicator';
-import { CreateExamIcon, SolveExamIcon, CreateScheduleIcon, NewChatIcon, KlAiLogo, UserIcon, LogoutIcon, EditIcon, SearchIcon, PinIcon, LearnModeIcon, ExamModeIcon, DownloadIcon, SunIcon, MoonIcon, TheoryModeIcon, MenuIcon, FeaturesIcon, FlashcardIcon, ShuffleIcon, CloneIcon, CalculatorIcon, PeriodicTableIcon, MinimizeIcon, MaximizeIcon, RestoreIcon, CreateFileIcon, MindMapIcon, TrashIcon, SettingsIcon, MoreHorizontalIcon } from './components/Icons';
+import { CreateExamIcon, SolveExamIcon, CreateScheduleIcon, NewChatIcon, KlAiLogo, UserIcon, LogoutIcon, EditIcon, SearchIcon, PinIcon, LearnModeIcon, ExamModeIcon, DownloadIcon, SunIcon, MoonIcon, TheoryModeIcon, MenuIcon, FeaturesIcon, FlashcardIcon, ShuffleIcon, CloneIcon, CalculatorIcon, PeriodicTableIcon, MinimizeIcon, MaximizeIcon, RestoreIcon, CreateFileIcon, MindMapIcon, TrashIcon, SettingsIcon, MoreHorizontalIcon, KeyIcon } from './components/Icons';
 import Auth from './components/Auth';
 import SettingsModal from './components/SettingsModal';
 import FlashcardView from './components/FlashcardView';
@@ -17,6 +13,8 @@ import PeriodicTable from './components/PeriodicTable';
 import ToolModal from './components/ToolModal';
 import MindMapModal from './components/MindMapModal';
 
+
+const DEMO_MESSAGE_LIMIT = 10;
 
 const getSystemInstruction = (role: User['aiRole'] = 'assistant', tone: User['aiTone'] = 'balanced'): string => {
     let roleDescription = '';
@@ -48,7 +46,7 @@ const getSystemInstruction = (role: User['aiRole'] = 'assistant', tone: User['ai
             break;
     }
 
-    const basePrompt = 'Bạn là KL AI, một trợ lý AI được thiết kế đặc biệt cho giáo viên và học sinh Việt Nam. Các câu trả lời của bạn phải bằng tiếng Việt. Sử dụng markdown để định dạng khi thích hợp, bao gồm cả công thức toán học LaTeX (sử dụng $...$ cho inline và $$...$$ cho block). Để vẽ đồ thị hàm số, hãy sử dụng khối mã "graph". Ví dụ:\n```graph\nf(x) = x^2\ny = sin(x)\n```\nĐể tạo bảng biến thiên, hãy sử dụng khối mã `bbt`. Ví dụ:\n```bbt\n| x | -∞ | 1 | +∞ |\n|---|---|---|---|\n| y\'| | + | 0 | - |\n| y | | ↗ | 2 | ↘ |\n```\nĐể tạo bảng xét dấu, hãy sử dụng khối mã `bsd`. Ví dụ:\n```bsd\n| x | -∞ | 2 | +∞ |\n|---|---|---|---|\n| f(x) | - | 0 | + |\n```';
+    const basePrompt = 'Bạn là KL AI, một trợ lý AI được thiết kế đặc biệt cho giáo viên và học sinh Việt Nam. Các câu trả lời của bạn phải bằng tiếng Việt. Sử dụng markdown để định dạng khi thích hợp, bao gồm cả công thức toán học LaTeX (sử dụng $...$ cho inline và $$...$$ cho block). Để vẽ đồ thị hàm số, hãy sử dụng khối mã "graph". Ví dụ:\n```graph\nf(x) = x^2\ny = sin(x)\n```\nĐể tạo bảng biến thiên, TUYỆT ĐỐI phải sử dụng khối mã `bbt`. Ví dụ:\n```bbt\n| x | -∞ | 1 | +∞ |\n|---|---|---|---|\n| y\'| | + | 0 | - |\n| y | | ↗ | 2 | ↘ |\n```\nNếu không dùng `bbt`, bảng sẽ bị lỗi. Để tạo bảng xét dấu, hãy sử dụng khối mã `bsd`. Ví dụ:\n```bsd\n| x | -∞ | 2 | +∞ |\n|---|---|---|---|\n| f(x) | - | 0 | + |\n```';
 
     return `${roleDescription} ${toneInstruction} ${basePrompt}`;
 }
@@ -148,6 +146,8 @@ const App: React.FC = () => {
   const [isCalculatorOpen, setIsCalculatorOpen] = useState(false);
   const [isPeriodicTableOpen, setIsPeriodicTableOpen] = useState(false);
   const [isAuthenticating, setIsAuthenticating] = useState(true);
+  const [demoMessageCount, setDemoMessageCount] = useState(0);
+  const [showDemoLimitModal, setShowDemoLimitModal] = useState(false);
 
 
   const chatInstances = useRef<{ [key: string]: Chat }>({});
@@ -190,14 +190,22 @@ const App: React.FC = () => {
             try {
                 // Mock validation
                 await new Promise(res => setTimeout(res, 500)); 
-                const mockUserData: User = { 
-                    username: 'Người dùng', 
-                    password: '', 
-                    aiRole: 'assistant', 
-                    aiTone: 'balanced',
-                    theme: 'dark'
-                };
-                setCurrentUser(mockUserData);
+                const storedUserStr = localStorage.getItem('kl-ai-user-data');
+                let userData: User;
+                if (storedUserStr) {
+                    userData = JSON.parse(storedUserStr);
+                } else {
+                    // Fallback if no stored user data
+                    userData = { 
+                        username: 'Người dùng', 
+                        password: '', 
+                        aiRole: 'assistant', 
+                        aiTone: 'balanced',
+                        theme: 'dark',
+                        isDemo: false 
+                    };
+                }
+                setCurrentUser(userData);
 
             } catch (error) {
                 console.error("Xác thực token thất bại", error);
@@ -319,7 +327,6 @@ const App: React.FC = () => {
   const handleExtractText = useCallback(async (file: { data: string; mimeType: string }) => {
     try {
         const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
-        // Using gemini-3-pro-preview for high quality vision task
         const response = await ai.models.generateContent({
             model: 'gemini-3-pro-preview',
             contents: {
@@ -337,7 +344,17 @@ const App: React.FC = () => {
   }, []);
 
   const handleSendMessage = useCallback(async (text: string, files: { name: string; data: string; mimeType: string }[] = []) => {
-    if (!activeChatId || isLoading) return;
+    if (!activeChatId || isLoading || !currentUser) return;
+    
+    // Demo Limit Check
+    if (currentUser.isDemo) {
+        if (demoMessageCount >= DEMO_MESSAGE_LIMIT) {
+            setShowDemoLimitModal(true);
+            return;
+        }
+        setDemoMessageCount(prev => prev + 1);
+    }
+
     if (!chatInstances.current[activeChatId]) return;
     if (!text.trim() && files.length === 0) return;
 
@@ -356,7 +373,7 @@ const App: React.FC = () => {
     setChatSessions(prev =>
         prev.map(chat =>
             chat.id === activeChatId
-                ? { ...chat, messages: [...chat.messages, userMessage, { role: 'model', text: '', timestamp: new Date().toISOString() }] }
+                ? { ...chat, messages: [...chat.messages, userMessage, { role: 'model', text: '', timestamp: new Date().toISOString(), mode: mode }] }
                 : chat
         )
     );
@@ -388,7 +405,7 @@ const App: React.FC = () => {
     try {
         const activeChat = chatInstances.current[activeChatId];
         
-        const parts: Part[] = [{ text }];
+        const parts: any[] = [{ text }];
         if (files.length > 0) {
             files.forEach(file => {
                 parts.push({
@@ -433,16 +450,19 @@ const App: React.FC = () => {
             );
         }
         
-        const mindMapData = parseMindMapFromResponse(fullText);
-        if (mindMapData.data) {
-             setChatSessions(prev => 
-                prev.map(chat => {
-                    if (chat.id !== activeChatId) return chat;
-                    const newMessages = [...chat.messages];
-                    newMessages[newMessages.length - 1].mindMapData = mindMapData.data!;
-                    return { ...chat, messages: newMessages };
-                })
-            );
+        // Only parse Mind Map if we are in mind map mode
+        if (mode === 'mind_map') {
+            const mindMapData = parseMindMapFromResponse(fullText);
+            if (mindMapData.data) {
+                 setChatSessions(prev => 
+                    prev.map(chat => {
+                        if (chat.id !== activeChatId) return chat;
+                        const newMessages = [...chat.messages];
+                        newMessages[newMessages.length - 1].mindMapData = mindMapData.data!;
+                        return { ...chat, messages: newMessages };
+                    })
+                );
+            }
         }
 
     } catch (error) {
@@ -461,13 +481,16 @@ const App: React.FC = () => {
     } finally {
         setIsLoading(false);
     }
-  }, [activeChatId, chatSessions, mode, isLoading, currentUser]);
+  }, [activeChatId, chatSessions, mode, isLoading, currentUser, demoMessageCount]);
 
   const handleLogout = () => {
       localStorage.removeItem('kl-ai-token');
+      localStorage.removeItem('kl-ai-user-data');
       setCurrentUser(null);
       setChatSessions([]);
       setActiveChatId(null);
+      setDemoMessageCount(0);
+      setShowDemoLimitModal(false);
   };
 
   const handleDeleteChat = (chatId: string, e: React.MouseEvent) => {
@@ -492,6 +515,7 @@ const App: React.FC = () => {
       try {
           const updated = { ...currentUser, ...updates };
           setCurrentUser(updated);
+          localStorage.setItem('kl-ai-user-data', JSON.stringify(updated));
           
           if (updates.aiRole || updates.aiTone) {
                const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
@@ -514,12 +538,24 @@ const App: React.FC = () => {
       }
   };
 
+  const handleOpenSettings = () => {
+      if (currentUser?.isDemo) {
+          alert("Tính năng cài đặt không khả dụng cho tài khoản Demo. Vui lòng đăng ký để tùy chỉnh cá nhân hóa.");
+          return;
+      }
+      setIsSettingsOpen(true);
+  };
+
   if (isAuthenticating) {
       return <div className="h-screen w-screen flex items-center justify-center bg-background text-text-primary"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand"></div></div>;
   }
 
   if (!currentUser) {
-      return <Auth onAuthSuccess={(user, token) => { setCurrentUser(user); localStorage.setItem('kl-ai-token', token); }} />;
+      return <Auth onAuthSuccess={(user, token) => { 
+          setCurrentUser(user); 
+          localStorage.setItem('kl-ai-token', token); 
+          localStorage.setItem('kl-ai-user-data', JSON.stringify(user));
+      }} />;
   }
 
   const activeChat = chatSessions.find(c => c.id === activeChatId);
@@ -533,10 +569,17 @@ const App: React.FC = () => {
                   <div className="w-8 h-8 rounded-full bg-brand flex items-center justify-center text-white font-bold shadow-lg">
                       {currentUser.avatar || <KlAiLogo className="w-5 h-5 text-white" />}
                   </div>
-                  <span className="font-semibold truncate max-w-[120px]">{currentUser.username}</span>
+                  <div className="flex flex-col">
+                      <span className="font-semibold truncate max-w-[120px] text-sm">{currentUser.username}</span>
+                      {currentUser.isDemo && <span className="text-[10px] text-orange-500 font-bold uppercase">Demo Guest</span>}
+                  </div>
               </div>
               <div className="flex items-center gap-1">
-                  <button onClick={() => setIsSettingsOpen(true)} className="p-2 hover:bg-sidebar rounded-lg transition-colors text-text-secondary hover:text-text-primary">
+                  <button 
+                    onClick={handleOpenSettings} 
+                    className={`p-2 rounded-lg transition-colors ${currentUser.isDemo ? 'text-text-secondary/40 cursor-not-allowed' : 'hover:bg-sidebar text-text-secondary hover:text-text-primary'}`}
+                    title={currentUser.isDemo ? "Không khả dụng cho Demo" : "Cài đặt"}
+                  >
                       <SettingsIcon className="w-5 h-5" />
                   </button>
                   <button onClick={handleLogout} className="p-2 hover:bg-red-500/10 rounded-lg transition-colors text-text-secondary hover:text-red-500">
@@ -566,6 +609,16 @@ const App: React.FC = () => {
           </div>
           
           <div className="flex-1 overflow-y-auto px-3 space-y-4 scrollbar-thin scrollbar-thumb-border scrollbar-track-transparent">
+              {currentUser.isDemo && (
+                  <div className="bg-blue-500/10 border border-blue-500/20 rounded-xl p-3 text-center">
+                      <p className="text-xs text-text-secondary mb-1">Giới hạn Demo</p>
+                      <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1.5 mb-1">
+                          <div className="bg-blue-500 h-1.5 rounded-full" style={{width: `${Math.min((demoMessageCount / DEMO_MESSAGE_LIMIT) * 100, 100)}%`}}></div>
+                      </div>
+                      <p className="text-[10px] text-text-secondary">{demoMessageCount}/{DEMO_MESSAGE_LIMIT} tin nhắn</p>
+                  </div>
+              )}
+
               {pinnedChats.length > 0 && (
                   <div>
                       <h3 className="text-xs font-semibold text-text-secondary uppercase tracking-wider mb-2 px-1">Đã ghim</h3>
@@ -635,7 +688,7 @@ const App: React.FC = () => {
                     <h1 className="font-bold text-lg truncate">{activeChat?.title || 'KL AI'}</h1>
                     <div className="flex items-center gap-2 text-xs text-text-secondary">
                         <span className={`w-2 h-2 rounded-full ${isLoading ? 'bg-yellow-500 animate-pulse' : 'bg-green-500'}`}></span>
-                        {isLoading ? 'Đang trả lời...' : 'Sẵn sàng'}
+                        {isLoading ? 'Đang xử lý...' : 'Sẵn sàng'}
                     </div>
                 </div>
             </div>
@@ -665,7 +718,8 @@ const App: React.FC = () => {
                     userAvatar={currentUser.avatar}
                  />
              ))}
-             {isLoading && activeChat?.messages[activeChat.messages.length - 1].role === 'user' && <TypingIndicator />}
+             {/* Always render typing indicator if loading, even if waiting for the first chunk */}
+             {isLoading && <TypingIndicator />}
              <div className="h-4"></div>
         </div>
 
@@ -714,6 +768,29 @@ const App: React.FC = () => {
       {flashcardData && <FlashcardView cards={flashcardData} onClose={() => setFlashcardData(null)} />}
       {mindMapModalData && <MindMapModal data={mindMapModalData} onClose={() => setMindMapModalData(null)} onCreateNewMindMap={(data) => handleSendMessage("Tạo sơ đồ tư duy từ dữ liệu này", []) /* Placeholder logic */} />}
       
+      {/* Demo Limit Modal */}
+      {showDemoLimitModal && (
+          <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
+              <div className="bg-card rounded-2xl shadow-2xl w-full max-w-md p-6 text-center animate-slide-in-up">
+                  <div className="w-16 h-16 bg-brand/10 rounded-full flex items-center justify-center mx-auto mb-4">
+                      <KeyIcon className="w-8 h-8 text-brand" />
+                  </div>
+                  <h3 className="text-xl font-bold text-text-primary mb-2">Hết lượt dùng thử</h3>
+                  <p className="text-text-secondary mb-6">
+                      Bạn đã sử dụng hết {DEMO_MESSAGE_LIMIT} lượt tin nhắn miễn phí dành cho tài khoản Demo. Vui lòng đăng nhập hoặc tạo tài khoản để tiếp tục sử dụng không giới hạn.
+                  </p>
+                  <div className="flex flex-col gap-3">
+                      <button onClick={handleLogout} className="w-full bg-brand hover:bg-brand/90 text-white font-bold py-3 rounded-xl transition-colors">
+                          Đăng nhập / Đăng ký ngay
+                      </button>
+                      <button onClick={() => setShowDemoLimitModal(false)} className="w-full text-text-secondary hover:text-text-primary py-2 text-sm">
+                          Để sau (chỉ xem lịch sử)
+                      </button>
+                  </div>
+              </div>
+          </div>
+      )}
+
       {isCalculatorOpen && (
           <ToolModal title="Máy tính khoa học" onClose={() => setIsCalculatorOpen(false)}>
               <Calculator />

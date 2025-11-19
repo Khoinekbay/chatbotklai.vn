@@ -10,6 +10,8 @@ export interface MindMapNode {
   name: string;
   children?: MindMapNode[];
   color?: string;
+  image?: string;
+  link?: string;
 }
 
 
@@ -50,4 +52,5 @@ export interface User {
   aiTone?: 'balanced' | 'humorous' | 'academic' | 'concise';
   theme?: 'light' | 'dark';
   backgroundUrl?: string;
+  isDemo?: boolean;
 }
