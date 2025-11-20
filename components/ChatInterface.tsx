@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { GoogleGenAI, Chat } from '@google/genai';
@@ -622,7 +623,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
     };
   }, []);
 
-  const handleExtractText = useCallback(async (file: { data: string; mimeType: string }) => {
+  const handleExtractText = useCallback(async (file: { data: string; mimeType: string }): Promise<string | null> => {
     try {
         const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
         const response = await ai.models.generateContent({
@@ -634,7 +635,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
                 ]
             }
         });
-        return response.text;
+        return response.text || null;
     } catch (error) {
         console.error("OCR failed:", error);
         return null;
@@ -1459,7 +1460,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
         </div>
       </main>
       
-      {/* Modals and Tools */}
+      {/* Lofi Player Widget */}
       <React.Suspense fallback={null}>
         <LofiPlayer />
       </React.Suspense>
