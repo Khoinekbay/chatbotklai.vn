@@ -1,7 +1,7 @@
 
-import React, { useState, useEffect } from 'react';
-import { KlAiLogo } from './Icons';
-import { type User } from '../types';
+import React, { useState, useEffect, useRef } from 'react';
+import { KlAiLogo } from '../../components/Icons';
+import { type User } from '../../types';
 import { api } from '../utils/api';
 
 interface AuthProps {
@@ -12,13 +12,15 @@ const Auth: React.FC<AuthProps> = ({ onAuthSuccess }) => {
   const [mode, setMode] = useState<'login' | 'register'>('login');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [email, setEmail] = useState(''); // Optional real email
   const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  
+  const passwordInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     document.documentElement.classList.add('dark');
-    // Pre-fill some data for easier testing if needed, or clear it
     return () => {
         // Optional cleanup
     }
@@ -29,6 +31,7 @@ const Auth: React.FC<AuthProps> = ({ onAuthSuccess }) => {
     setError(null);
     setUsername('');
     setPassword('');
+    setEmail('');
     setConfirmPassword('');
   };
 
@@ -36,21 +39,25 @@ const Auth: React.FC<AuthProps> = ({ onAuthSuccess }) => {
     e.preventDefault();
     setError(null);
     
-    if (!username.trim() || !password.trim()) {
+    const cleanUsername = username.trim();
+    const cleanEmail = email.trim();
+    const cleanPassword = password.trim();
+
+    if (!cleanUsername || !cleanPassword) {
       setError('Vui lòng nhập đầy đủ tên đăng nhập và mật khẩu.');
       return;
     }
 
     if (mode === 'register') {
-        if (username.length < 3) {
+        if (cleanUsername.length < 3) {
             setError('Tên đăng nhập phải có ít nhất 3 ký tự.');
             return;
         }
-        if (password.length < 6) {
+        if (cleanPassword.length < 6) {
              setError('Mật khẩu phải có ít nhất 6 ký tự.');
              return;
         }
-        if (password !== confirmPassword) {
+        if (cleanPassword !== confirmPassword.trim()) {
             setError('Mật khẩu xác nhận không khớp.');
             return;
         }
@@ -60,10 +67,11 @@ const Auth: React.FC<AuthProps> = ({ onAuthSuccess }) => {
 
     try {
       if (mode === 'login') {
-          const { user, token } = await api.login(username, password);
+          const { user, token } = await api.login(cleanUsername, cleanPassword);
           onAuthSuccess(user, token);
       } else {
-          const { user, token } = await api.register(username, password);
+          // Pass the optional email to register
+          const { user, token } = await api.register(cleanUsername, cleanPassword, cleanEmail);
           onAuthSuccess(user, token);
       }
     } catch (err: any) {
@@ -82,6 +90,13 @@ const Auth: React.FC<AuthProps> = ({ onAuthSuccess }) => {
       } catch (err: any) {
           setError('Không thể khởi tạo phiên bản Demo.');
           setIsLoading(false);
+      }
+  };
+  
+  const handleUsernameKeyDown = (e: React.KeyboardEvent) => {
+      if (e.key === 'Enter') {
+          e.preventDefault();
+          passwordInputRef.current?.focus();
       }
   };
   
@@ -123,17 +138,41 @@ const Auth: React.FC<AuthProps> = ({ onAuthSuccess }) => {
                     type="text"
                     value={username}
                     onChange={(e) => setUsername(e.target.value)}
+                    onKeyDown={handleUsernameKeyDown}
                     className="w-full bg-input-bg border border-border rounded-xl p-3 text-text-primary placeholder-text-secondary focus:ring-2 focus:ring-brand focus:border-transparent transition-all outline-none"
                     placeholder="Ví dụ: hocsinh123"
                     autoComplete="username"
+                    autoCapitalize="none"
+                    autoCorrect="off"
+                    spellCheck={false}
                     />
                 </div>
+
+                {mode === 'register' && (
+                <div className="animate-slide-in-up" style={{ animationDuration: '0.1s' }}>
+                    <label htmlFor="email" className="block text-sm font-medium text-text-secondary mb-1.5">
+                    Email liên hệ <span className="text-xs opacity-70 font-normal">(Tùy chọn)</span>
+                    </label>
+                    <input
+                    id="email"
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    className="w-full bg-input-bg border border-border rounded-xl p-3 text-text-primary placeholder-text-secondary focus:ring-2 focus:ring-brand focus:border-transparent transition-all outline-none"
+                    placeholder="example@gmail.com"
+                    autoComplete="email"
+                    />
+                    <p className="text-[11px] text-text-secondary/70 mt-1 ml-1">Dùng để xác minh sở hữu khi cần hỗ trợ hoặc khôi phục tài khoản.</p>
+                </div>
+                )}
+
                 <div>
                     <label htmlFor="password"className="block text-sm font-medium text-text-secondary mb-1.5">
                     Mật khẩu
                     </label>
                     <input
                     id="password"
+                    ref={passwordInputRef}
                     type="password"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}

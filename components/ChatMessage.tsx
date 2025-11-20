@@ -235,7 +235,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, isLastMessage = fals
                 return dataObject;
             }
             return null;
-        }).filter((item): item is { fn: string, range?: [number, number] } => item !== null);
+        }).filter((item: any): item is { fn: string, range?: [number, number] } => item !== null);
         
         const encodedData = JSON.stringify(functionData).replace(/'/g, '&apos;');
         return `<div id="graph-${uniqueGraphId}" class="graph-container my-4" data-functions='${encodedData}'></div>`;

@@ -235,7 +235,7 @@ const MindMapView = React.forwardRef<MindMapViewHandles, MindMapViewProps>(({ da
     const { width, height } = dimensions;
 
     const treeLayout = d3.layout.tree().nodeSize([100, 40]);
-    const diagonalGenerator = d3.svg.diagonal().projection((d: {x: number, y: number}) => [d.y, d.x]);
+    const diagonalGenerator = d3.svg.diagonal().projection((d: any) => [d.y, d.x]);
     
     const svgSelection = d3.select(svgRef.current);
 
@@ -553,9 +553,9 @@ const MindMapView = React.forwardRef<MindMapViewHandles, MindMapViewProps>(({ da
       .attr('contentEditable', true)
       .style('outline', 'none')
       .style('min-width', '20px')
-      .on('blur', function() {
-        this.contentEditable = false;
-        const newName = this.textContent.trim();
+      .on('blur', function(this: HTMLElement) {
+        this.contentEditable = 'false';
+        const newName = this.textContent?.trim() || '';
         
         if (newName && newName !== initialText) {
           d.name = newName;
@@ -569,7 +569,7 @@ const MindMapView = React.forwardRef<MindMapViewHandles, MindMapViewProps>(({ da
         setEditingNodeId(null);
         onToggleNodeSelection(d, false);
       })
-      .on('keydown', function() {
+      .on('keydown', function(this: HTMLElement) {
         if (d3.event.key === 'Enter' && !d3.event.shiftKey) {
             d3.event.preventDefault();
             this.blur();
@@ -593,10 +593,12 @@ const MindMapView = React.forwardRef<MindMapViewHandles, MindMapViewProps>(({ da
     el.focus();
     const range = document.createRange();
     const sel = window.getSelection();
-    range.selectNodeContents(el);
-    range.collapse(false);
-    sel.removeAllRanges();
-    sel.addRange(range);
+    if (sel) {
+        range.selectNodeContents(el);
+        range.collapse(false);
+        sel.removeAllRanges();
+        sel.addRange(range);
+    }
   }, [editingNodeId, onToggleNodeSelection]);
 
   const handleAction = (action: (tree: D3Node) => D3Node | void) => {
