@@ -29,10 +29,6 @@ const EntertainmentMenu = React.lazy(() => import('./EntertainmentMenu'));
 
 const DEMO_MESSAGE_LIMIT = 10;
 const MODEL_NAME = 'gemini-2.5-flash';
-// Primary model
-const IMAGE_MODEL_NAME = 'imagen-4.0-generate-001';
-// Fallback model if 4.0 fails
-const IMAGE_MODEL_FALLBACK = 'imagen-3.0-generate-001';
 
 declare global {
     interface Window {
@@ -745,63 +741,32 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
     }
 
     try {
-        // --- IMAGE GENERATION MODE ---
+        // --- IMAGE GENERATION MODE (Pollinations.ai - Free) ---
         if (mode === 'generate_image') {
-             const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
-             let generatedImage;
-             
-             try {
-                 // Try Imagen 4 first (High Quality)
-                 const response = await ai.models.generateImages({
-                    model: IMAGE_MODEL_NAME,
-                    prompt: text,
-                    config: {
-                      numberOfImages: 1,
-                      aspectRatio: '1:1',
-                    },
-                 });
-                 generatedImage = response.generatedImages?.[0]?.image;
-             } catch (err: any) {
-                 console.warn(`Imagen 4 failed: ${err.message}. Falling back to Imagen 3...`);
-                 // Fallback to Imagen 3 (More stable)
-                 try {
-                    const response = await ai.models.generateImages({
-                        model: IMAGE_MODEL_FALLBACK,
-                        prompt: text,
-                        config: {
-                            numberOfImages: 1,
-                            aspectRatio: '1:1',
-                        },
-                    });
-                    generatedImage = response.generatedImages?.[0]?.image;
-                 } catch (fallbackErr: any) {
-                     console.error("Imagen 3 fallback failed:", fallbackErr);
-                     throw fallbackErr; // Re-throw to be caught by main catch block
-                 }
-             }
-             
-             if (generatedImage) {
-                 const base64ImageBytes = generatedImage.imageBytes;
-                 const imageUrl = `data:image/png;base64,${base64ImageBytes}`;
-                 
-                 setChatSessions(prev => 
-                    prev.map(chat => {
-                        if (chat.id !== activeChatId) return chat;
-                        const newMessages = [...chat.messages];
-                        const lastMsg = { ...newMessages[newMessages.length - 1] };
-                        lastMsg.text = `Đã tạo ảnh dựa trên mô tả: "${text}"`;
-                        lastMsg.files = [{
-                             name: 'generated-image.png',
-                             dataUrl: imageUrl,
-                             mimeType: 'image/png'
-                        }];
-                        newMessages[newMessages.length - 1] = lastMsg;
-                        return { ...chat, messages: newMessages };
-                    })
-                );
-             } else {
-                 throw new Error("Không nhận được hình ảnh từ AI.");
-             }
+             // Tạo số ngẫu nhiên để tránh cache
+             const randomSeed = Math.floor(Math.random() * 10000000);
+             const encodedPrompt = encodeURIComponent(text);
+             // Sử dụng Pollinations.ai API với seed random để mỗi lần là ảnh mới
+             const imageUrl = `https://image.pollinations.ai/prompt/${encodedPrompt}?seed=${randomSeed}&width=1024&height=1024&nologo=true`;
+
+             // Fake một chút delay để cảm giác như đang xử lý
+             await new Promise(resolve => setTimeout(resolve, 1000));
+
+             setChatSessions(prev =>
+                prev.map(chat => {
+                    if (chat.id !== activeChatId) return chat;
+                    const newMessages = [...chat.messages];
+                    const lastMsg = { ...newMessages[newMessages.length - 1] };
+                    lastMsg.text = `Đã tạo ảnh dựa trên mô tả: "${text}"\n(Nguồn: Pollinations.ai)`;
+                    lastMsg.files = [{
+                         name: `generated-${randomSeed}.jpg`,
+                         dataUrl: imageUrl,
+                         mimeType: 'image/jpeg'
+                    }];
+                    newMessages[newMessages.length - 1] = lastMsg;
+                    return { ...chat, messages: newMessages };
+                })
+            );
         } 
         // --- STANDARD CHAT MODE ---
         else {
@@ -942,12 +907,6 @@ Nếu được yêu cầu vẽ biểu đồ, hãy trả về JSON \`chart_json\`
         
         if (mode === 'generate_image') {
             errorMessage = "Không thể tạo ảnh. Có thể do mô tả chứa nội dung không phù hợp hoặc dịch vụ đang bận.";
-            // Provide specific hint for Vercel deployment issues
-            if (!process.env.API_KEY) {
-                errorMessage += " (Lỗi: Thiếu API Key trong Environment Variables)";
-            } else if (error.message?.includes('403')) {
-                errorMessage += " (Lỗi: API Key không có quyền truy cập Imagen. Vui lòng kiểm tra cài đặt dự án Google Cloud)";
-            }
         } else {
             errorMessage += "(Kiểm tra API Key của bạn hoặc định dạng file)";
         }
@@ -1394,7 +1353,7 @@ Nếu được yêu cầu vẽ biểu đồ, hãy trả về JSON \`chart_json\`
                 <div className="mobile-menu-content relative bg-card border-t border-border rounded-t-3xl p-5 shadow-2xl animate-slide-in-up max-h-[85vh] overflow-y-auto flex flex-col">
                    {/* Handle bar with Close Button */}
                    <div className="flex items-center justify-between mb-4 flex-shrink-0">
-                       <h3 className="text-lg font-bold">Menu Chức năng</h3>
+                       <h3 className="text-lg font-bold">Menu Chức năng & Công cụ</h3>
                        <button 
                            onClick={() => setIsFeaturesPopoverOpen(false)}
                            className="px-4 py-2 bg-red-500 text-white rounded-full hover:bg-red-600 transition-colors font-bold text-sm flex items-center gap-1"
@@ -1405,7 +1364,7 @@ Nếu được yêu cầu vẽ biểu đồ, hãy trả về JSON \`chart_json\`
                    
                    <div className="overflow-y-auto pb-8 space-y-6">
                       <div>
-                          <h4 className="text-xs font-bold text-text-secondary uppercase mb-3 px-1">Chế độ chính</h4>
+                          <h4 className="text-xs font-bold text-text-secondary uppercase mb-3 px-1 border-b border-border pb-1">Chế độ chính</h4>
                           <div className="grid grid-cols-2 gap-3">
                             {modeItems.map(m => (
                                 <button
@@ -1432,7 +1391,7 @@ Nếu được yêu cầu vẽ biểu đồ, hãy trả về JSON \`chart_json\`
                       </div>
 
                       <div>
-                          <h4 className="text-xs font-bold text-text-secondary uppercase mb-3 px-1">Công cụ học tập</h4>
+                          <h4 className="text-xs font-bold text-text-secondary uppercase mb-3 px-1 border-b border-border pb-1">Công cụ học tập</h4>
                           <div className="grid grid-cols-2 gap-3">
                              {toolItems.map(m => (
                                 <button
@@ -1440,6 +1399,7 @@ Nếu được yêu cầu vẽ biểu đồ, hãy trả về JSON \`chart_json\`
                                     onClick={(e) => {
                                         e.preventDefault();
                                         e.stopPropagation();
+                                        // Tools open modals, so we keep menu open or close? User asked to keep open.
                                         if (m.action) m.action();
                                     }}
                                     className="flex flex-col items-center justify-center gap-2 p-4 rounded-xl bg-input-bg hover:bg-sidebar border border-transparent text-text-secondary transition-all active:scale-95"
