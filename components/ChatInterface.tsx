@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { GoogleGenAI, Chat } from '@google/genai';
@@ -36,10 +35,12 @@ declare global {
     }
 }
 
-// ... (Keep helper functions: getSystemInstruction, parseFlashcardsFromResponse, etc. UNCHANGED) ...
+interface BeforeInstallPromptEvent extends Event {
+  prompt: () => void;
+  userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>;
+}
 
 const getSystemInstruction = (role: User['aiRole'] = 'assistant', tone: User['aiTone'] = 'balanced', customInstruction?: string, currentMode?: Mode): string => {
-    // --- SPECIAL MODES OVERRIDE (Ignore user settings) ---
     if (currentMode === 'rpg') {
         return `Bạn là Game Master (GM) của một trò chơi nhập vai dạng văn bản (Text Adventure). Hãy dẫn dắt người chơi qua một cốt truyện thú vị, sáng tạo. Bắt đầu bằng việc mô tả bối cảnh hiện tại và hỏi người chơi muốn làm gì. Luôn mô tả hậu quả của hành động một cách sinh động. Giữ giọng văn lôi cuốn.`;
     }
@@ -56,7 +57,6 @@ const getSystemInstruction = (role: User['aiRole'] = 'assistant', tone: User['ai
         return `Bạn là chuyên gia tâm lý học. Hãy đặt các câu hỏi trắc nghiệm ngắn để xác định tính cách MBTI của người dùng. Hỏi từng câu một. Sau khoảng 10 câu, hãy đưa ra dự đoán về nhóm tính cách của họ.`;
     }
 
-    // --- STANDARD MODES ---
     let roleDescription = '';
     switch (role) {
         case 'teacher':
@@ -237,7 +237,7 @@ const mindMapToMarkdown = (node: MindMapNode, depth = 0): string => {
     const indent = '  '.repeat(depth);
     let result = `${indent}- ${node.name}\n`;
     if (node.children) {
-        result += node.children.map(child => mindMapToMarkdown(child, depth + 1)).join('');
+        result += node.children.map((child: MindMapNode) => mindMapToMarkdown(child, depth + 1)).join('');
     }
     return result;
 };
@@ -252,7 +252,7 @@ const mapMessageToHistory = (m: Message) => {
    }
 
    if (m.files) {
-       m.files.forEach(file => {
+       m.files.forEach((file: any) => {
            if (file.mimeType.startsWith('image/') || file.mimeType === 'application/pdf' || file.mimeType.startsWith('text/')) {
                const base64Data = file.dataUrl.split(',')[1];
                parts.push({
@@ -271,8 +271,6 @@ const mapMessageToHistory = (m: Message) => {
        parts: parts
    };
 };
-
-// --- COMPONENT START ---
 
 interface ChatInterfaceProps {
   currentUser: User;
@@ -309,8 +307,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
   const [showDemoLimitModal, setShowDemoLimitModal] = useState(false);
   const [showLoginPromptModal, setShowLoginPromptModal] = useState(false);
 
-  // PWA / Install Logic
-  const [installPrompt, setInstallPrompt] = useState<any>(null);
+  const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const [showInstallInstructions, setShowInstallInstructions] = useState(false);
   const [isStandalone, setIsStandalone] = useState(false);
   const [isIOS, setIsIOS] = useState(false);
@@ -342,7 +339,6 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
       { id: 'similar_exam', label: 'Đề tương tự', icon: <CloneIcon className="w-5 h-5" /> },
       { id: 'create_file', label: 'Tạo file', icon: <CreateFileIcon className="w-5 h-5" /> },
       
-      // Tools
       { id: 'calculator', label: 'Máy tính', icon: <CalculatorIcon className="w-5 h-5 text-orange-500"/>, action: () => setIsCalculatorOpen(true) },
       { id: 'periodic_table', label: 'Bảng tuần hoàn', icon: <PeriodicTableIcon className="w-5 h-5 text-green-500"/>, action: () => setIsPeriodicTableOpen(true) },
       { id: 'formula_notebook', label: 'Sổ công thức', icon: <NotebookIcon className="w-5 h-5 text-red-500"/>, action: () => setIsFormulaNotebookOpen(true) },
@@ -351,11 +347,9 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
   ];
   
   const toolsIds = ['whiteboard', 'probability', 'calculator', 'periodic_table', 'formula_notebook', 'unit_converter', 'pomodoro'];
-  const toolItems = menuItems.filter(m => toolsIds.includes(m.id));
-  const modeItems = menuItems.filter(m => !toolsIds.includes(m.id));
+  const toolItems = menuItems.filter((m: any) => toolsIds.includes(m.id));
+  const modeItems = menuItems.filter((m: any) => !toolsIds.includes(m.id));
 
-  // ... (Effects for Theme and Demo - UNCHANGED) ...
-  
   useEffect(() => {
     const savedTheme = currentUser?.theme || localStorage.getItem('kl-ai-theme') as 'light' | 'dark' || 'light';
     setTheme(savedTheme);
@@ -379,20 +373,17 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
     }
   }, [currentUser]);
 
-  // PWA Install Logic
   useEffect(() => {
-      const handleBeforeInstallPrompt = (e: any) => {
+      const handleBeforeInstallPrompt = (e: Event) => {
           e.preventDefault();
-          setInstallPrompt(e);
+          setInstallPrompt(e as BeforeInstallPromptEvent);
       };
       
       window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
       
-      // Check if iOS
       const iOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
       setIsIOS(iOS);
 
-      // Check if Standalone (Installed)
       const isStandaloneMode = window.matchMedia('(display-mode: standalone)').matches || (window.navigator as any).standalone === true;
       setIsStandalone(isStandaloneMode);
 
@@ -404,19 +395,16 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
   const handleInstallClick = () => {
       if (installPrompt) {
           installPrompt.prompt();
-          installPrompt.userChoice.then((choiceResult: any) => {
+          installPrompt.userChoice.then((choiceResult: { outcome: 'accepted' | 'dismissed' }) => {
               if (choiceResult.outcome === 'accepted') {
                   setInstallPrompt(null);
               }
           });
       } else {
-          // Fallback for iOS or when prompt is unavailable
           setShowInstallInstructions(true);
       }
   };
 
-  // ... (Effects for Background, Font, Mode Sync - UNCHANGED) ...
-  
   useEffect(() => {
     if (currentUser?.backgroundUrl) {
       document.body.style.backgroundImage = `url(${currentUser.backgroundUrl})`;
@@ -449,9 +437,6 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
       }
   }, [activeChatId, chatSessions]);
 
-
-  // ... (handleNewChat, loadChats, initializeChatInstances, auto-save, handleSendMessage - ALL UNCHANGED) ...
-  
   const handleNewChat = useCallback(async (initialMode: Mode = 'chat', initialMessage?: Message) => {
     if (!currentUser) return;
     const isSpecialMode = ['rpg', 'roast', 'akinator', 'tarot', 'mbti'].includes(initialMode);
@@ -465,19 +450,23 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
         : [{ role: 'model', text: "Xin chào! Tôi là KL AI. Tôi có thể giúp gì cho bạn hôm nay?", mode: initialMode }],
       isPinned: false,
     };
+    
     if (isSpecialMode && !initialMessage) {
          if (initialMode === 'rpg') newChat.messages = [{ role: 'model', text: "Chào mừng lữ khách! Bạn muốn phiêu lưu trong bối cảnh nào (Trung cổ, Cyberpunk, Kiếm hiệp...)?", mode: initialMode }];
          if (initialMode === 'roast') newChat.messages = [{ role: 'model', text: "Ồ, lại thêm một kẻ muốn nghe sự thật trần trụi à? Được thôi, nói gì đi nào.", mode: initialMode }];
          if (initialMode === 'akinator') newChat.messages = [{ role: 'model', text: "Ta là Thần đèn Akinator. Hãy nghĩ về một nhân vật và ta sẽ đoán ra. Sẵn sàng chưa?", mode: initialMode }];
          if (initialMode === 'mbti') newChat.messages = [{ role: 'model', text: "Chào bạn. Hãy bắt đầu bài trắc nghiệm tính cách MBTI nhé. Bạn sẵn sàng chưa?", mode: initialMode }];
     }
+
     if (initialMessage && initialMessage.role === 'user') {
         newChat.messages.push({ role: 'model', text: '', timestamp: new Date().toISOString(), mode: initialMode });
     }
+
     setChatSessions(prev => [newChat, ...prev]);
     setActiveChatId(newChat.id);
-    setMode(initialMode); 
+    setMode(initialMode);
     setIsMobileSidebarOpen(false);
+    
     try {
         const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
         const systemInstruction = getSystemInstruction(currentUser?.aiRole, currentUser?.aiTone, currentUser?.customInstruction, initialMode);
@@ -486,6 +475,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
             config: { systemInstruction },
         });
         chatInstances.current[newChat.id] = chatInstance;
+
         if (initialMessage && initialMessage.role === 'user') {
             setIsLoading(true);
             chatInstance.sendMessageStream({ message: [{ text: initialMessage.text }] }).then(async (result) => {
@@ -517,6 +507,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
     } catch (error) {
         console.error("Failed to initialize chat instance", error);
     }
+
     if (!currentUser.isDemo) {
         api.saveChatSession(currentUser.username, newChat).catch(err => console.error("Background save failed", err));
     }
@@ -559,9 +550,11 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
             const chatHistory = session.messages
                 .map(mapMessageToHistory)
                 .filter((content): content is { role: Role; parts: any[] } => content !== null);
+
             const historyWithoutWelcome = chatHistory.length > 0 && chatHistory[0].role === 'model' 
                 ? chatHistory.slice(1) 
                 : chatHistory;
+
             try {
                 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
                 chatInstances.current[session.id] = ai.chats.create({
@@ -688,17 +681,19 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
     }
     if (!chatInstances.current[activeChatId] && mode !== 'generate_image') return;
     if (!text.trim() && files.length === 0) return;
+
     const userMessage: Message = {
         role: 'user',
         text,
         timestamp: new Date().toISOString(),
-        files: files.map(file => ({
+        files: files.map((file: any) => ({
             name: file.name,
             dataUrl: `data:${file.mimeType};base64,${file.data}`,
             mimeType: file.mimeType
         })),
         mode: mode,
     };
+
     setChatSessions(prev =>
         prev.map(chat =>
             chat.id === activeChatId
@@ -713,12 +708,13 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
     const generateTitleIfNeeded = async (promptText: string) => {
         const activeChat = chatSessions.find(c => c.id === activeChatId);
         const isFirstUserMessage = activeChat ? activeChat.messages.filter(m => m.role === 'user').length === 0 : false;
+
         if (isFirstUserMessage && promptText) {
             const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
             try {
                 const titleGenPrompt = `Dựa vào yêu cầu đầu tiên này: "${promptText}", hãy tạo một tiêu đề ngắn gọn (tối đa 5 từ) bằng tiếng Việt cho cuộc trò chuyện. Chỉ trả về tiêu đề.`;
                 const titleResponse = await ai.models.generateContent({ model: MODEL_NAME, contents: titleGenPrompt });
-                let newTitle = titleResponse.text.trim().replace(/^"|"$/g, '');
+                let newTitle = (titleResponse.text || '').trim().replace(/^"|"$/g, '');
                 if (newTitle) {
                     setChatSessions(prev =>
                         prev.map(chat => chat.id === activeChatId ? { ...chat, title: newTitle } : chat)
@@ -760,7 +756,6 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
             const activeChat = chatInstances.current[activeChatId];
             let messageTextToSend = text;
             let finalFiles = [...files];
-            let hasProcessedSpreadsheet = false;
 
             if (mode === 'data_analysis' && files.length > 0) {
                  for (const file of files) {
@@ -768,8 +763,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
                          const csvContent = await readSpreadsheet(file);
                          if (csvContent) {
                              messageTextToSend += `\n\n[Dữ liệu từ file ${file.name}]:\n${csvContent}\n`;
-                             finalFiles = finalFiles.filter(f => f !== file);
-                             hasProcessedSpreadsheet = true;
+                             finalFiles = finalFiles.filter((f: any) => f !== file);
                          }
                      }
                  }
@@ -787,7 +781,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
 
             const parts: any[] = [{ text: messageTextToSend }];
             if (finalFiles.length > 0) {
-                finalFiles.forEach(file => {
+                finalFiles.forEach((file: any) => {
                     parts.push({
                         inlineData: {
                             mimeType: file.mimeType,
@@ -877,7 +871,6 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
     }
   }, [activeChatId, chatSessions, mode, isLoading, currentUser, demoMessageCount]);
 
-  // ... (Delete/Pin/UpdateUser/MindMap/Whiteboard Handlers - UNCHANGED) ...
   const handleDeleteChat = async (chatId: string, e: React.MouseEvent) => {
       e.stopPropagation();
       if (!currentUser) return;
@@ -1045,7 +1038,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
               </button>
           </div>
           
-          {/* PWA Install Button (Sidebar) - Always visible unless installed */}
+          {/* PWA Install Button */}
           {!isStandalone && (
             <div className="px-3 mt-3">
                 <button 
@@ -1083,7 +1076,6 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
               </button>
           </div>
 
-          {/* Search and Chat List - UNCHANGED */}
           <div className="px-3 mb-2">
               <div className="relative">
                   <SearchIcon className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-text-secondary" />
@@ -1197,7 +1189,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
             </div>
             
             <div className="flex items-center gap-1 sm:gap-2">
-                 {/* ... (Desktop Header Tools - UNCHANGED) ... */}
+                 {/* Tools */}
                  <button onClick={() => setIsCalculatorOpen(true)} className="p-2 text-text-secondary hover:bg-sidebar rounded-lg transition-colors hidden sm:block" title="Máy tính">
                      <CalculatorIcon className="w-5 h-5" />
                  </button>
@@ -1250,7 +1242,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
                       {/* Desktop Menu (Dropdown) */}
                       {isFeaturesPopoverOpen && (
                           <div className="hidden sm:flex absolute z-50 bg-card border border-border shadow-xl p-2 animate-slide-in-up bottom-auto top-full left-auto right-0 mt-2 w-64 rounded-xl flex-col gap-1 max-h-[60vh] overflow-y-auto origin-top-right scrollbar-thin scrollbar-thumb-border">
-                              {menuItems.map((m) => (
+                              {menuItems.map((m: any) => (
                                   <button
                                       key={m.id}
                                       onClick={() => { 
@@ -1312,7 +1304,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
                       <div>
                           <h4 className="text-xs font-bold text-text-secondary uppercase mb-3 px-1 border-b border-border pb-1">Chế độ chính</h4>
                           <div className="grid grid-cols-2 gap-3">
-                            {modeItems.map(m => (
+                            {modeItems.map((m: any) => (
                                 <button
                                     key={m.id}
                                     onClick={(e) => {
@@ -1338,7 +1330,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
                       <div>
                           <h4 className="text-xs font-bold text-text-secondary uppercase mb-3 px-1 border-b border-border pb-1">Công cụ học tập</h4>
                           <div className="grid grid-cols-2 gap-3">
-                             {toolItems.map(m => (
+                             {toolItems.map((m: any) => (
                                 <button
                                     key={m.id}
                                     onClick={(e) => {
@@ -1362,7 +1354,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
             document.body
         )}
 
-        {/* Mobile Entertainment Menu - UNCHANGED */}
+        {/* Mobile Entertainment Menu */}
         {isEntertainmentPopoverOpen && createPortal(
             <div className="fixed inset-0 z-[100] sm:hidden flex flex-col justify-end">
                 <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setIsEntertainmentPopoverOpen(false)} />
@@ -1387,7 +1379,6 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
             document.body
         )}
 
-        {/* Chat Content Area - UNCHANGED */}
         <div 
           ref={chatContainerRef} 
           className="flex-1 overflow-y-auto p-4 md:p-6 scroll-smooth"
@@ -1431,7 +1422,6 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
             </div>
         </div>
 
-        {/* Chat Input - UNCHANGED */}
         <div className="flex-shrink-0 p-4 bg-background/80 backdrop-blur-sm border-t border-border z-20">
             <div className="max-w-3xl mx-auto">
                 <ChatInput 
@@ -1469,7 +1459,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
         </div>
       </main>
       
-      {/* Modals and Tools (Lofi, Settings, etc.) - UNCHANGED except new Install Modal */}
+      {/* Modals and Tools */}
       <React.Suspense fallback={null}>
         <LofiPlayer />
       </React.Suspense>
@@ -1484,7 +1474,6 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
           </React.Suspense>
       )}
         
-      {/* ... (Other Modals UNCHANGED) ... */}
       {flashcardData && (
           <React.Suspense fallback={null}>
               <FlashcardView cards={flashcardData} onClose={() => setFlashcardData(null)} />
@@ -1562,7 +1551,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
           </div>
       )}
 
-      {/* Demo Limit Modal - UNCHANGED */}
+      {/* Demo Limit Modal */}
       {showDemoLimitModal && (
             <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
                 <div className="bg-card rounded-2xl shadow-2xl max-w-md w-full p-6 border border-border animate-message-pop-in">
@@ -1589,7 +1578,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
             </div>
         )}
 
-      {/* Login Prompt Modal - UNCHANGED */}
+      {/* Login Prompt Modal */}
       {showLoginPromptModal && (
             <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
                 <div className="bg-card rounded-2xl shadow-2xl max-w-md w-full p-6 border border-border animate-message-pop-in">

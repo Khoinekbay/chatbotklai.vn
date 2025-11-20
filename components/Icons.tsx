@@ -1,10 +1,3 @@
-
-
-
-
-
-
-
 import React from 'react';
 
 export const SendIcon: React.FC<React.SVGProps<SVGSVGElement>> = (props) => (
@@ -136,10 +129,10 @@ export const NewChatIcon: React.FC<React.SVGProps<SVGSVGElement>> = (props) => (
     <svg {...props} xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"></path></svg>
 );
 
-// UPDATED KL AI LOGO (Using Image + Text)
+// UPDATED KL AI LOGO (Using the requested robot image)
 export const KlAiLogo: React.FC<React.SVGProps<SVGSVGElement>> = (props) => (
     <svg {...props} viewBox="0 0 240 60" fill="none" xmlns="http://www.w3.org/2000/svg">
-        {/* Embedded Image from URL to ensure consistency with favicon */}
+        {/* Embedded Image from URL */}
         <image href="https://cdn-icons-png.flaticon.com/512/4712/4712035.png" x="0" y="0" height="60" width="60"/>
         <text x="70" y="42" fontFamily="'Inter', sans-serif" fontSize="36" fontWeight="800" fill="currentColor" letterSpacing="-1">KL AI</text>
     </svg>

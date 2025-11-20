@@ -2,29 +2,29 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { GoogleGenAI, Chat } from '@google/genai';
-import { type Message, type ChatSession, type User, type MindMapNode, type Mode, type FollowUpAction, type Role } from '../types';
-import ChatMessage from './ChatMessage';
-import ChatInput from './ChatInput';
-import TypingIndicator from './TypingIndicator';
-import { CreateExamIcon, SolveExamIcon, CreateScheduleIcon, NewChatIcon, KlAiLogo, UserIcon, LogoutIcon, EditIcon, SearchIcon, PinIcon, LearnModeIcon, ExamModeIcon, DownloadIcon, SunIcon, MoonIcon, TheoryModeIcon, MenuIcon, FeaturesIcon, FlashcardIcon, ShuffleIcon, CloneIcon, CalculatorIcon, PeriodicTableIcon, MinimizeIcon, MaximizeIcon, RestoreIcon, CreateFileIcon, MindMapIcon, TrashIcon, SettingsIcon, MoreHorizontalIcon, KeyIcon, MagicIcon, PresentationIcon, GraderIcon, DocumentSearchIcon, TimerIcon, ChartIcon, LockIcon, ScaleIcon, DiceIcon, NotebookIcon, GamepadIcon, XIcon, DownloadAppIcon, ShareIOSIcon } from './Icons';
+import { type Message, type ChatSession, type User, type MindMapNode, type Mode, type FollowUpAction, type Role } from '../../types';
+import ChatMessage from '../../components/ChatMessage';
+import ChatInput from '../../components/ChatInput';
+import TypingIndicator from '../../components/TypingIndicator';
+import { CreateExamIcon, SolveExamIcon, CreateScheduleIcon, NewChatIcon, KlAiLogo, UserIcon, LogoutIcon, EditIcon, SearchIcon, PinIcon, LearnModeIcon, ExamModeIcon, DownloadIcon, SunIcon, MoonIcon, TheoryModeIcon, MenuIcon, FeaturesIcon, FlashcardIcon, ShuffleIcon, CloneIcon, CalculatorIcon, PeriodicTableIcon, MinimizeIcon, MaximizeIcon, RestoreIcon, CreateFileIcon, MindMapIcon, TrashIcon, SettingsIcon, MoreHorizontalIcon, KeyIcon, MagicIcon, PresentationIcon, GraderIcon, DocumentSearchIcon, TimerIcon, ChartIcon, LockIcon, ScaleIcon, DiceIcon, NotebookIcon, GamepadIcon, XIcon, DownloadAppIcon, ShareIOSIcon } from '../../components/Icons';
 import { api } from '../utils/api';
 
 // Lazy load heavy components
-const SettingsModal = React.lazy(() => import('./SettingsModal'));
-const FlashcardView = React.lazy(() => import('./FlashcardView'));
-const Calculator = React.lazy(() => import('./Calculator'));
-const PeriodicTable = React.lazy(() => import('./PeriodicTable'));
-const ToolModal = React.lazy(() => import('./ToolModal'));
-const MindMapModal = React.lazy(() => import('./MindMapModal'));
-const Whiteboard = React.lazy(() => import('./Whiteboard'));
-const PomodoroTimer = React.lazy(() => import('./PomodoroTimer'));
-const UnitConverter = React.lazy(() => import('./UnitConverter'));
-const ProbabilitySim = React.lazy(() => import('./ProbabilitySim'));
-const FormulaNotebook = React.lazy(() => import('./FormulaNotebook'));
-const BreathingExercise = React.lazy(() => import('./BreathingExercise'));
-const LofiPlayer = React.lazy(() => import('./LofiPlayer'));
-const TarotReader = React.lazy(() => import('./TarotReader'));
-const EntertainmentMenu = React.lazy(() => import('./EntertainmentMenu'));
+const SettingsModal = React.lazy(() => import('../../components/SettingsModal'));
+const FlashcardView = React.lazy(() => import('../../components/FlashcardView'));
+const Calculator = React.lazy(() => import('../../components/Calculator'));
+const PeriodicTable = React.lazy(() => import('../../components/PeriodicTable'));
+const ToolModal = React.lazy(() => import('../../components/ToolModal'));
+const MindMapModal = React.lazy(() => import('../../components/MindMapModal'));
+const Whiteboard = React.lazy(() => import('../../components/Whiteboard'));
+const PomodoroTimer = React.lazy(() => import('../../components/PomodoroTimer'));
+const UnitConverter = React.lazy(() => import('../../components/UnitConverter'));
+const ProbabilitySim = React.lazy(() => import('../../components/ProbabilitySim'));
+const FormulaNotebook = React.lazy(() => import('../../components/FormulaNotebook'));
+const BreathingExercise = React.lazy(() => import('../../components/BreathingExercise'));
+const LofiPlayer = React.lazy(() => import('../../components/LofiPlayer'));
+const TarotReader = React.lazy(() => import('../../components/TarotReader'));
+const EntertainmentMenu = React.lazy(() => import('../../components/EntertainmentMenu'));
 
 
 const DEMO_MESSAGE_LIMIT = 10;
@@ -238,7 +238,7 @@ const mindMapToMarkdown = (node: MindMapNode, depth = 0): string => {
     const indent = '  '.repeat(depth);
     let result = `${indent}- ${node.name}\n`;
     if (node.children) {
-        result += node.children.map(child => mindMapToMarkdown(child, depth + 1)).join('');
+        result += node.children.map((child: MindMapNode) => mindMapToMarkdown(child, depth + 1)).join('');
     }
     return result;
 };
@@ -253,7 +253,7 @@ const mapMessageToHistory = (m: Message) => {
    }
 
    if (m.files) {
-       m.files.forEach(file => {
+       m.files.forEach((file: any) => {
            if (file.mimeType.startsWith('image/') || file.mimeType === 'application/pdf' || file.mimeType.startsWith('text/')) {
                const base64Data = file.dataUrl.split(',')[1];
                parts.push({
@@ -350,8 +350,8 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
   ];
   
   const toolsIds = ['whiteboard', 'probability', 'calculator', 'periodic_table', 'formula_notebook', 'unit_converter', 'pomodoro'];
-  const toolItems = menuItems.filter(m => toolsIds.includes(m.id));
-  const modeItems = menuItems.filter(m => !toolsIds.includes(m.id));
+  const toolItems = menuItems.filter((m: any) => toolsIds.includes(m.id));
+  const modeItems = menuItems.filter((m: any) => !toolsIds.includes(m.id));
 
   useEffect(() => {
     const savedTheme = currentUser?.theme || localStorage.getItem('kl-ai-theme') as 'light' | 'dark' || 'light';
@@ -734,7 +734,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
         role: 'user',
         text,
         timestamp: new Date().toISOString(),
-        files: files.map(file => ({
+        files: files.map((file: any) => ({
             name: file.name,
             dataUrl: `data:${file.mimeType};base64,${file.data}`,
             mimeType: file.mimeType
@@ -764,7 +764,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
             try {
                 const titleGenPrompt = `Dựa vào yêu cầu đầu tiên này: "${promptText}", hãy tạo một tiêu đề ngắn gọn (tối đa 5 từ) bằng tiếng Việt cho cuộc trò chuyện. Chỉ trả về tiêu đề.`;
                 const titleResponse = await ai.models.generateContent({ model: MODEL_NAME, contents: titleGenPrompt });
-                let newTitle = titleResponse.text.trim().replace(/^"|"$/g, '');
+                let newTitle = (titleResponse.text || '').trim().replace(/^"|"$/g, '');
                 if (newTitle) {
                     setChatSessions(prev =>
                         prev.map(chat => chat.id === activeChatId ? { ...chat, title: newTitle } : chat)
@@ -825,7 +825,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
                          if (csvContent) {
                              messageTextToSend += `\n\n[Dữ liệu từ file ${file.name}]:\n${csvContent}\n`;
                              // Don't send binary for spreadsheet since we sent text
-                             finalFiles = finalFiles.filter(f => f !== file);
+                             finalFiles = finalFiles.filter((f: any) => f !== file);
                              hasProcessedSpreadsheet = true;
                          }
                      }
@@ -874,7 +874,7 @@ Nếu được yêu cầu vẽ biểu đồ, hãy trả về JSON \`chart_json\`
 
             const parts: any[] = [{ text: messageTextToSend }];
             if (finalFiles.length > 0) {
-                finalFiles.forEach(file => {
+                finalFiles.forEach((file: any) => {
                     parts.push({
                         inlineData: {
                             mimeType: file.mimeType,
@@ -1374,7 +1374,7 @@ Nếu được yêu cầu vẽ biểu đồ, hãy trả về JSON \`chart_json\`
                       {/* Desktop Menu (Dropdown) */}
                       {isFeaturesPopoverOpen && (
                           <div className="hidden sm:flex absolute z-50 bg-card border border-border shadow-xl p-2 animate-slide-in-up bottom-auto top-full left-auto right-0 mt-2 w-64 rounded-xl flex-col gap-1 max-h-[60vh] overflow-y-auto origin-top-right scrollbar-thin scrollbar-thumb-border">
-                              {menuItems.map((m) => (
+                              {menuItems.map((m: any) => (
                                   <button
                                       key={m.id}
                                       onClick={() => { 
@@ -1436,7 +1436,7 @@ Nếu được yêu cầu vẽ biểu đồ, hãy trả về JSON \`chart_json\`
                       <div>
                           <h4 className="text-xs font-bold text-text-secondary uppercase mb-3 px-1 border-b border-border pb-1">Chế độ chính</h4>
                           <div className="grid grid-cols-2 gap-3">
-                            {modeItems.map(m => (
+                            {modeItems.map((m: any) => (
                                 <button
                                     key={m.id}
                                     onClick={(e) => {
@@ -1462,7 +1462,7 @@ Nếu được yêu cầu vẽ biểu đồ, hãy trả về JSON \`chart_json\`
                       <div>
                           <h4 className="text-xs font-bold text-text-secondary uppercase mb-3 px-1 border-b border-border pb-1">Công cụ học tập</h4>
                           <div className="grid grid-cols-2 gap-3">
-                             {toolItems.map(m => (
+                             {toolItems.map((m: any) => (
                                 <button
                                     key={m.id}
                                     onClick={(e) => {
@@ -1516,13 +1516,13 @@ Nếu được yêu cầu vẽ biểu đồ, hãy trả về JSON \`chart_json\`
           className="flex-1 overflow-y-auto p-4 md:p-6 scroll-smooth"
         >
             <div className="max-w-3xl mx-auto space-y-6">
-                {activeChat?.messages.map((msg, idx) => (
+                {activeChat?.messages.map((msg: Message, idx: number) => (
                     <ChatMessage 
                         key={idx} 
                         message={msg} 
                         isLastMessage={idx === activeChat.messages.length - 1}
                         isLoading={isLoading}
-                        onFollowUpClick={(originalText, action) => {
+                        onFollowUpClick={(originalText: string, action: FollowUpAction) => {
                             let prompt = '';
                             switch(action) {
                                 case 'explain': prompt = `Giải thích chi tiết hơn về: "${originalText.substring(0, 100)}..."`; break;
@@ -1531,10 +1531,10 @@ Nếu được yêu cầu vẽ biểu đồ, hãy trả về JSON \`chart_json\`
                             }
                             handleSendMessage(prompt);
                         }}
-                        onApplySchedule={(scheduleText) => {}}
-                        onOpenFlashcards={(cards) => setFlashcardData(cards)}
-                        onOpenMindMap={(data) => setMindMapModalState({ data, messageIndex: idx })}
-                        onAskSelection={(text) => handleSendMessage(`Giải thích giúp tôi đoạn này: "${text}"`)}
+                        onApplySchedule={(scheduleText: string) => {}}
+                        onOpenFlashcards={(cards: { term: string; definition: string }[]) => setFlashcardData(cards)}
+                        onOpenMindMap={(data: MindMapNode) => setMindMapModalState({ data, messageIndex: idx })}
+                        onAskSelection={(text: string) => handleSendMessage(`Giải thích giúp tôi đoạn này: "${text}"`)}
                         onRegenerate={idx === activeChat.messages.length - 1 && msg.role === 'model' ? () => {
                              const lastUserMsgIndex = activeChat.messages.length - 2;
                              if (lastUserMsgIndex >= 0) {
