@@ -2,6 +2,9 @@
 
 
 
+
+
+
 import React from 'react';
 
 export const SendIcon: React.FC<React.SVGProps<SVGSVGElement>> = (props) => (
@@ -132,12 +135,16 @@ export const CreateScheduleIcon: React.FC<React.SVGProps<SVGSVGElement>> = (prop
 export const NewChatIcon: React.FC<React.SVGProps<SVGSVGElement>> = (props) => (
     <svg {...props} xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"></path></svg>
 );
+
+// UPDATED KL AI LOGO (Using Image + Text)
 export const KlAiLogo: React.FC<React.SVGProps<SVGSVGElement>> = (props) => (
-  <svg {...props} viewBox="0 0 200 60" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <text x="10" y="45" fontFamily="Arial, sans-serif" fontSize="40" fontWeight="bold" fill="currentColor" letterSpacing="-2">KL AI</text>
-    <circle cx="135" cy="15" r="5" fill="currentColor" className="text-brand animate-pulse" />
-  </svg>
+    <svg {...props} viewBox="0 0 240 60" fill="none" xmlns="http://www.w3.org/2000/svg">
+        {/* Embedded Image from URL to ensure consistency with favicon */}
+        <image href="https://cdn-icons-png.flaticon.com/512/4712/4712035.png" x="0" y="0" height="60" width="60"/>
+        <text x="70" y="42" fontFamily="'Inter', sans-serif" fontSize="36" fontWeight="800" fill="currentColor" letterSpacing="-1">KL AI</text>
+    </svg>
 );
+
 export const LogoutIcon: React.FC<React.SVGProps<SVGSVGElement>> = (props) => (
     <svg {...props} xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
 );
@@ -321,4 +328,21 @@ export const MusicIcon: React.FC<React.SVGProps<SVGSVGElement>> = (props) => (
 );
 export const PuzzleIcon: React.FC<React.SVGProps<SVGSVGElement>> = (props) => (
     <svg {...props} xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19.439 15.494a9.96 9.96 0 0 1-4.157 4.157"></path><path d="M13.861 5.83a9.96 9.96 0 0 1 4.157 4.157"></path><path d="M4.561 8.516a9.96 9.96 0 0 1 4.157-4.157"></path><path d="M10.139 18.17a9.96 9.96 0 0 1-4.157-4.157"></path><circle cx="12" cy="12" r="3"></circle></svg>
+);
+export const DownloadAppIcon: React.FC<React.SVGProps<SVGSVGElement>> = (props) => (
+  <svg {...props} xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+    <line x1="8" y1="21" x2="16" y2="21"></line>
+    <line x1="12" y1="17" x2="12" y2="21"></line>
+    <path d="M12 12l4-4"></path>
+    <path d="M8 8l4 4"></path>
+  </svg>
+);
+
+export const ShareIOSIcon: React.FC<React.SVGProps<SVGSVGElement>> = (props) => (
+    <svg {...props} xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/>
+        <polyline points="16 6 12 2 8 6"/>
+        <line x1="12" y1="2" x2="12" y2="15"/>
+    </svg>
 );
