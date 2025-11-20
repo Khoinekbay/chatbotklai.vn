@@ -1,4 +1,5 @@
 
+
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { GoogleGenAI, Chat } from '@google/genai';
@@ -1516,7 +1517,7 @@ Nếu được yêu cầu vẽ biểu đồ, hãy trả về JSON \`chart_json\`
           className="flex-1 overflow-y-auto p-4 md:p-6 scroll-smooth"
         >
             <div className="max-w-3xl mx-auto space-y-6">
-                {activeChat?.messages.map((msg, idx) => (
+                {activeChat?.messages.map((msg: Message, idx: number) => (
                     <ChatMessage 
                         key={idx} 
                         message={msg} 
