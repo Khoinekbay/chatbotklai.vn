@@ -1,5 +1,3 @@
-
-
 import React, { useState, useRef, useEffect } from 'react';
 import { type User } from '../types';
 import { XIcon, SunIcon, MoonIcon, SettingsIcon, UserIcon, KeyIcon } from './Icons';
@@ -279,7 +277,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ user, onClose, onUpdateUs
                      <p className="text-xs text-red-500 mt-2 pl-1 leading-5">
                          <b>Lỗi kết nối! Vui lòng kiểm tra:</b> <br/>
                          1. API Key (phải bắt đầu bằng "eyJ...", không phải "sb_publishable") <br/>
-                         2. Đã tắt "Confirm Email" trong Supabase chưa? (Auth -> Providers -> Email)<br/>
+                         2. Đã tắt "Confirm Email" trong Supabase chưa? (Auth &rarr; Providers &rarr; Email)<br/>
                          3. Đã chạy lệnh SQL tạo bảng chưa?
                      </p>
                 )}
