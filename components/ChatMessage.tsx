@@ -1,8 +1,9 @@
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { type Message, type MindMapNode, type FollowUpAction } from '../types';
-import { UserIcon, AngryBotIcon, SpeakerIcon, ShareIcon, CheckIcon, BellPlusIcon, FlashcardIcon, FileIcon, DownloadIcon, MindMapIcon, ThumbUpIcon, ThumbDownIcon, HelpCircleIcon, RegenerateIcon, ChevronUpIcon, ExplainIcon, ExampleIcon, SummarizeIcon, ChevronDownIcon } from './Icons';
+import { UserIcon, AngryBotIcon, SpeakerIcon, ShareIcon, CheckIcon, BellPlusIcon, FlashcardIcon, FileIcon, DownloadIcon, MindMapIcon, ThumbUpIcon, ThumbDownIcon, HelpCircleIcon, RegenerateIcon, ChevronUpIcon, ExplainIcon, ExampleIcon, SummarizeIcon, ChevronDownIcon, CalendarPlusIcon } from './Icons';
+import DataChart from './DataChart';
 
 
 // Let TypeScript know about the objects on the window
@@ -151,10 +152,110 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, isLastMessage = fals
     };
   }, [isSpeaking]);
 
+  const textToDisplay = isUser ? message.text : displayedText;
+
+  // Memoize the HTML content generation to prevent unnecessary DOM updates
+  const htmlContent = useMemo(() => {
+    if (!textToDisplay) return '';
+
+    const mathBlocks: string[] = [];
+    const mathPlaceholder = '___MATHJAX_PLACEHOLDER___';
+
+    let textWithPlaceholders = textToDisplay.replace(/(\$\$[\s\S]*?\$\$|\$[\s\S]*?\$)/g, (match) => {
+        const index = mathBlocks.length;
+        mathBlocks.push(match);
+        return `${mathPlaceholder}${index}${mathPlaceholder}`;
+    });
+
+    // Use a deterministic counter for graphs within this specific render cycle of the message
+    let graphCounter = 0;
+
+    textWithPlaceholders = textWithPlaceholders.replace(/```graph\n([\s\S]*?)\n```/g, (match, content) => {
+        // Use messageId + counter to ensure stability across re-renders
+        const uniqueGraphId = `${messageId.current}-${graphCounter++}`;
+        
+        const functionData = content.trim().split('\n').map(line => {
+            const trimmedLine = line.trim();
+            if (!trimmedLine) return null;
+
+            // Regex to find "from ... to ..." or "từ ... đến ..."
+            const rangeRegex = /(?:from|từ)\s+([-\d\w\s.πpi*+/()]+)\s+(?:to|đến)\s+([-\d\w\s.πpi*+/()]+)/iu;
+            const rangeMatch = trimmedLine.match(rangeRegex);
+
+            let fnString = trimmedLine;
+            let range: [number, number] | undefined = undefined;
+
+            if (rangeMatch) {
+                fnString = trimmedLine.substring(0, rangeMatch.index).trim();
+                
+                const parseRangeValue = (val: string): number => {
+                    const cleanedVal = val.trim().toLowerCase().replace(/π/g, 'pi');
+                    try {
+                        let expression = cleanedVal.replace(/\bpi\b/g, `(${Math.PI})`);
+                        // Add support for e
+                        expression = expression.replace(/\be\b/g, `(${Math.E})`);
+
+                        // Allow only a safe subset of characters
+                        if (/^[-()\d\s*+./]+$/.test(expression)) {
+                            const result = new Function(`return ${expression}`)();
+                            if (typeof result === 'number' && isFinite(result)) {
+                                return result;
+                            }
+                        }
+                    } catch (e) { /* ignore parse error */ }
+                    // Fallback for simple numbers
+                    return parseFloat(cleanedVal);
+                };
+
+                const start = parseRangeValue(rangeMatch[1]);
+                const end = parseRangeValue(rangeMatch[2]);
+                
+                if (!isNaN(start) && !isNaN(end)) {
+                    range = [start, end];
+                }
+            }
+
+            let finalFn: string | null = null;
+            const definitionMatch = fnString.match(/^(?:f\(x\)|y)\s*=\s*(.*)/i);
+            if (definitionMatch && definitionMatch[1]) {
+                finalFn = definitionMatch[1].trim();
+            } else {
+                // Heuristic to check if it's a plain expression
+                const nonMathChars = fnString.replace(/[xy\d\s.()+\-*/^]|sin|cos|tan|log|ln|sqrt|abs|pi|e/gi, '');
+                if (nonMathChars.length === 0) {
+                    finalFn = fnString;
+                }
+            }
+
+            if (finalFn) {
+                const dataObject: { fn: string, range?: [number, number] } = { fn: finalFn };
+                if (range) {
+                    dataObject.range = range;
+                }
+                return dataObject;
+            }
+            return null;
+        }).filter((item): item is { fn: string, range?: [number, number] } => item !== null);
+        
+        const encodedData = JSON.stringify(functionData).replace(/'/g, '&apos;');
+        return `<div id="graph-${uniqueGraphId}" class="graph-container my-4" data-functions='${encodedData}'></div>`;
+    });
+    
+    let html = markdownToHTML(textWithPlaceholders);
+    
+    mathBlocks.forEach((block, index) => {
+        const searchString = `${mathPlaceholder}${index}${mathPlaceholder}`;
+        html = html.replace(searchString, block);
+    });
+    
+    return html;
+  }, [textToDisplay]);
+
+
   // Effect 2: DOM Manipulations (Graphs, MathJax, Tables)
-  // Runs on every render where content is present to ensure they persist after React re-renders.
+  // Runs when htmlContent changes OR when loading status changes (to fix reverting issue)
   useEffect(() => {
-    if (contentRef.current && (!isLastMessage || !isLoading || displayedText)) {
+    if (contentRef.current && htmlContent) {
         
         // 1. Render graphs
         const graphElements = contentRef.current.querySelectorAll('.graph-container');
@@ -349,13 +450,18 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, isLastMessage = fals
             }, 50);
         });
     }
-  }, [displayedText, isLastMessage, isLoading, feedback, isSpeaking, isCopied]); 
-  // Dependency array includes interaction states (feedback, isSpeaking, etc) 
-  // because they trigger re-renders which wipe dangerouslySetInnerHTML content.
+  }, [htmlContent, isLoading]); 
+  // Added isLoading to dependencies: This ensures that when the message finishes loading 
+  // (isLoading goes from true to false), the effect runs again. 
+  // This fixes the issue where the text reverts to raw LaTeX because React re-rendered 
+  // the component with the raw string but the MathJax typeset didn't trigger.
 
   useEffect(() => {
-    const handleMouseUp = () => {
+    const handleMouseUp = (e: MouseEvent) => {
         if (isUser || !contentRef.current || !onAskSelection) return;
+
+        // Check if the click happened inside the text selection popover.
+        if ((e.target as HTMLElement).closest('.selection-popover')) return;
         
         setTimeout(() => {
             const selection = window.getSelection();
@@ -385,7 +491,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, isLastMessage = fals
     return () => {
         document.removeEventListener('mouseup', handleMouseUp);
     };
-}, [isUser, onAskSelection]);
+  }, [isUser, onAskSelection]);
 
   const handleToggleSpeech = () => {
     if (isSpeaking) {
@@ -425,7 +531,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, isLastMessage = fals
     }
   };
 
-  const handleDownload = (fileData: Required<Message>['fileToDownload']) => {
+  const handleDownload = (fileData: { name: string; content: string; mimeType: string }) => {
     const blob = new Blob([fileData.content], { type: fileData.mimeType });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -436,6 +542,29 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, isLastMessage = fals
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
   };
+  
+  const handleAddToCalendar = () => {
+      if (!message.scheduleData) return;
+      const { title, startTime, endTime, details, location } = message.scheduleData;
+      
+      // Helper function to format date to YYYYMMDDTHHMMSSZ (UTC)
+      const toISOStringCompact = (dateStr: string) => {
+          try {
+              const d = new Date(dateStr);
+              return d.toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
+          } catch (e) {
+              // Fallback: assume user might edit manually if parsing failed
+              return '';
+          }
+      };
+
+      const start = toISOStringCompact(startTime);
+      const end = toISOStringCompact(endTime);
+      
+      const googleCalendarUrl = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(title)}&dates=${start}/${end}&details=${encodeURIComponent(details)}${location ? `&location=${encodeURIComponent(location)}` : ''}`;
+      
+      window.open(googleCalendarUrl, '_blank');
+  };
 
   const handleFeedback = (type: 'like' | 'dislike') => {
     setFeedback(prev => (prev === type ? null : type));
@@ -443,103 +572,6 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, isLastMessage = fals
     // e.g., sendFeedbackToServer(messageId, type);
   };
 
-  const renderContent = (text: string) => {
-    if (!text) return null;
-
-    const mathBlocks: string[] = [];
-    const mathPlaceholder = '___MATHJAX_PLACEHOLDER___';
-
-    let textWithPlaceholders = text.replace(/(\$\$[\s\S]*?\$\$|\$[\s\S]*?\$)/g, (match) => {
-        const index = mathBlocks.length;
-        mathBlocks.push(match);
-        return `${mathPlaceholder}${index}${mathPlaceholder}`;
-    });
-
-    // Use a deterministic counter for graphs within this specific render cycle of the message
-    let graphCounter = 0;
-
-    textWithPlaceholders = textWithPlaceholders.replace(/```graph\n([\s\S]*?)\n```/g, (match, content) => {
-        // Use messageId + counter to ensure stability across re-renders
-        const uniqueGraphId = `${messageId.current}-${graphCounter++}`;
-        
-        const functionData = content.trim().split('\n').map(line => {
-            const trimmedLine = line.trim();
-            if (!trimmedLine) return null;
-
-            // Regex to find "from ... to ..." or "từ ... đến ..."
-            const rangeRegex = /(?:from|từ)\s+([-\d\w\s.πpi*+/()]+)\s+(?:to|đến)\s+([-\d\w\s.πpi*+/()]+)/iu;
-            const rangeMatch = trimmedLine.match(rangeRegex);
-
-            let fnString = trimmedLine;
-            let range: [number, number] | undefined = undefined;
-
-            if (rangeMatch) {
-                fnString = trimmedLine.substring(0, rangeMatch.index).trim();
-                
-                const parseRangeValue = (val: string): number => {
-                    const cleanedVal = val.trim().toLowerCase().replace(/π/g, 'pi');
-                    try {
-                        let expression = cleanedVal.replace(/\bpi\b/g, `(${Math.PI})`);
-                        // Add support for e
-                        expression = expression.replace(/\be\b/g, `(${Math.E})`);
-
-                        // Allow only a safe subset of characters
-                        if (/^[-()\d\s*+./]+$/.test(expression)) {
-                            const result = new Function(`return ${expression}`)();
-                            if (typeof result === 'number' && isFinite(result)) {
-                                return result;
-                            }
-                        }
-                    } catch (e) { /* ignore parse error */ }
-                    // Fallback for simple numbers
-                    return parseFloat(cleanedVal);
-                };
-
-                const start = parseRangeValue(rangeMatch[1]);
-                const end = parseRangeValue(rangeMatch[2]);
-                
-                if (!isNaN(start) && !isNaN(end)) {
-                    range = [start, end];
-                }
-            }
-
-            let finalFn: string | null = null;
-            const definitionMatch = fnString.match(/^(?:f\(x\)|y)\s*=\s*(.*)/i);
-            if (definitionMatch && definitionMatch[1]) {
-                finalFn = definitionMatch[1].trim();
-            } else {
-                // Heuristic to check if it's a plain expression
-                const nonMathChars = fnString.replace(/[xy\d\s.()+\-*/^]|sin|cos|tan|log|ln|sqrt|abs|pi|e/gi, '');
-                if (nonMathChars.length === 0) {
-                    finalFn = fnString;
-                }
-            }
-
-            if (finalFn) {
-                const dataObject: { fn: string, range?: [number, number] } = { fn: finalFn };
-                if (range) {
-                    dataObject.range = range;
-                }
-                return dataObject;
-            }
-            return null;
-        }).filter((item): item is { fn: string, range?: [number, number] } => item !== null);
-        
-        const encodedData = JSON.stringify(functionData).replace(/'/g, '&apos;');
-        return `<div id="graph-${uniqueGraphId}" class="graph-container my-4" data-functions='${encodedData}'></div>`;
-    });
-    
-    let html = markdownToHTML(textWithPlaceholders);
-    
-    mathBlocks.forEach((block, index) => {
-        const searchString = `${mathPlaceholder}${index}${mathPlaceholder}`;
-        html = html.replace(searchString, block);
-    });
-    
-    return <div dangerouslySetInnerHTML={{ __html: html }} />;
-  };
-
-  const textToDisplay = isUser ? message.text : displayedText;
   const isTyping = isLastMessage && isLoading && message.role === 'model' && message.text.length > 0;
 
   const bubbleClasses = isUser 
@@ -552,12 +584,12 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, isLastMessage = fals
   const iconClasses = isUser ? 'text-brand' : 'text-amber-400';
   const showFollowUpActions = !isUser && (!isLastMessage || !isLoading) && message.text && onFollowUpClick && !message.mindMapData && !message.isError;
   const showApplyScheduleButton = !isUser && (!isLastMessage || !isLoading) && message.mode === 'create_schedule' && onApplySchedule;
-  // Refined logic for flashcards button: only show if mode is 'flashcard'
   const showOpenFlashcardsButton = !isUser && message.flashcards && message.flashcards.length > 0 && onOpenFlashcards && message.mode === 'flashcard';
   const showDownloadButton = !isUser && message.fileToDownload && (!isLastMessage || !isLoading);
   const showOpenMindMapButton = !isUser && message.mindMapData && onOpenMindMap && (!isLastMessage || !isLoading);
+  const showAddToCalendar = !isUser && message.scheduleData && (!isLastMessage || !isLoading);
 
-  if (!textToDisplay && message.role === 'model' && !isTyping && (!message.files || message.files.length === 0) && !message.mindMapData) {
+  if (!textToDisplay && message.role === 'model' && !isTyping && (!message.files || message.files.length === 0) && !message.mindMapData && !message.chartConfig) {
     return null;
   }
   
@@ -565,7 +597,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, isLastMessage = fals
     <>
       {selectionPopover?.visible && !isUser && createPortal(
           <div
-              className="fixed bg-card border border-border shadow-lg rounded-full flex items-center gap-2 px-3 py-1.5 animate-message-pop-in"
+              className="selection-popover fixed bg-card border border-border shadow-lg rounded-full flex items-center gap-2 px-3 py-1.5 animate-message-pop-in"
               style={{
                   top: `${selectionPopover.y}px`,
                   left: `${selectionPopover.x}px`,
@@ -573,16 +605,18 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, isLastMessage = fals
                   zIndex: 100,
                   animationDuration: '0.15s'
               }}
-              onMouseDown={(e) => e.stopPropagation()}
+              onMouseDown={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+              }}
           >
               <button
-                  onClick={() => {
+                  onClick={(e) => {
+                      e.stopPropagation(); 
                       if (onAskSelection) {
                           onAskSelection(selectedTextRef.current);
                       }
                       setSelectionPopover(null);
-                      selectedTextRef.current = '';
-                      window.getSelection()?.removeAllRanges();
                   }}
                   className="flex items-center gap-1.5 text-sm font-medium text-brand hover:opacity-80 transition-opacity"
               >
@@ -619,7 +653,16 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, isLastMessage = fals
                 ))}
               </div>
             )}
-            {renderContent(textToDisplay)}
+            {/* Render the memoized HTML content */}
+            <div dangerouslySetInnerHTML={{ __html: htmlContent }} />
+            
+            {/* Render Chart if available */}
+            {!isUser && message.chartConfig && (
+                <div className="mt-4 not-prose">
+                    <DataChart config={message.chartConfig} />
+                </div>
+            )}
+
             {isTyping && <span className="inline-block w-2 h-4 bg-gray-400 dark:bg-gray-500 animate-pulse ml-1 align-bottom"></span>}
           </div>
           
@@ -669,15 +712,25 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, isLastMessage = fals
                   <div className="w-[1px] h-4 bg-border mx-1"></div>
               </>
           )}
-
-          {showDownloadButton && (
+          
+          {showAddToCalendar && (
             <button
-              onClick={() => handleDownload(message.fileToDownload!)}
-              className="bg-brand/10 hover:bg-brand/20 text-brand text-xs px-3 py-1.5 rounded-full transition-colors flex items-center gap-1.5 font-semibold"
+                onClick={handleAddToCalendar}
+                className="bg-green-500/10 hover:bg-green-500/20 text-green-600 text-xs px-3 py-1.5 rounded-full transition-colors flex items-center gap-1.5 font-semibold"
             >
-              <DownloadIcon className="w-4 h-4" /> Tải xuống {message.fileToDownload!.name}
+                <CalendarPlusIcon className="w-4 h-4" /> Thêm vào Google Calendar
             </button>
           )}
+
+          {showDownloadButton && message.fileToDownload && message.fileToDownload.map((file, idx) => (
+            <button
+              key={idx}
+              onClick={() => handleDownload(file)}
+              className="bg-brand/10 hover:bg-brand/20 text-brand text-xs px-3 py-1.5 rounded-full transition-colors flex items-center gap-1.5 font-semibold"
+            >
+              <DownloadIcon className="w-4 h-4" /> Tải xuống {file.name}
+            </button>
+          ))}
 
           {showOpenMindMapButton && (
             <button

@@ -1,8 +1,7 @@
 
-
 export type Role = 'user' | 'model';
 
-export type Mode = 'chat' | 'create_exam' | 'solve_exam' | 'create_schedule' | 'learn' | 'exam' | 'theory' | 'flashcard' | 'scramble_exam' | 'similar_exam' | 'create_file' | 'mind_map';
+export type Mode = 'chat' | 'create_exam' | 'solve_exam' | 'create_schedule' | 'learn' | 'exam' | 'theory' | 'flashcard' | 'scramble_exam' | 'similar_exam' | 'create_file' | 'mind_map' | 'generate_image' | 'grader' | 'chat_document' | 'data_analysis' | 'rpg' | 'roast' | 'akinator' | 'tarot' | 'mbti';
 
 export type FollowUpAction = 'explain' | 'example' | 'summarize';
 
@@ -29,9 +28,16 @@ export interface Message {
     name: string;
     content: string;
     mimeType: string;
-    extension: string;
-  };
+  }[];
   mindMapData?: MindMapNode;
+  chartConfig?: any; // JSON config for Chart.js
+  scheduleData?: {
+    title: string;
+    startTime: string;
+    endTime: string;
+    details: string;
+    location?: string;
+  };
   isError?: boolean;
   mode?: Mode;
 }
@@ -46,6 +52,7 @@ export interface ChatSession {
 export interface User {
   username: string;
   password: string;
+  email?: string | null; // Optional real email used for contact/recovery
   avatar?: string;
   fontPreference?: string;
   aiRole?: 'assistant' | 'teacher' | 'classmate';
@@ -53,4 +60,5 @@ export interface User {
   theme?: 'light' | 'dark';
   backgroundUrl?: string;
   isDemo?: boolean;
+  customInstruction?: string;
 }

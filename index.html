@@ -1,10 +1,19 @@
+
 <!DOCTYPE html>
 <html lang="vi">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <title>KL AI</title>
     
+    <!-- PWA Configuration -->
+    <link rel="manifest" href="/manifest.json" />
+    <meta name="theme-color" content="#0f172a" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="KL AI" />
+    <link rel="apple-touch-icon" href="https://img.icons8.com/fluency/192/robot-2.png">
+
     <!-- Resource Hints for Performance -->
     <link rel="dns-prefetch" href="https://cdn.tailwindcss.com">
     <link rel="dns-prefetch" href="https://aistudiocdn.com">
@@ -44,6 +53,12 @@
     </script>
     <script src="https://d3js.org/d3.v3.min.js" defer></script>
     <script src="https://unpkg.com/function-plot/dist/function-plot.js" defer></script>
+    
+    <!-- Chart.js for Data Visualization -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- SheetJS for Excel Parsing -->
+    <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
+
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&family=Lora:ital,wght@0,400;0,700;1,400&family=Roboto+Mono:wght@400;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js" defer></script>
@@ -137,6 +152,29 @@
           transform: translateX(0);
         }
       }
+      @keyframes ripple {
+        0% {
+          box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.7);
+        }
+        70% {
+          box-shadow: 0 0 0 15px rgba(220, 38, 38, 0);
+        }
+        100% {
+          box-shadow: 0 0 0 0 rgba(220, 38, 38, 0);
+        }
+      }
+      @keyframes pulse-ring {
+        0% { transform: scale(0.8); opacity: 0.5; }
+        50% { transform: scale(1); opacity: 1; }
+        100% { transform: scale(0.8); opacity: 0.5; }
+      }
+
+      /* Breathing Animation */
+      @keyframes breathe {
+        0%, 100% { transform: scale(1); }
+        50% { transform: scale(1.2); }
+      }
+
       /* Table styles for markdown */
       .prose .table-wrapper {
         overflow-x: auto;
@@ -534,6 +572,18 @@
       .has-custom-bg main {
         background-color: transparent !important;
       }
+
+      /* Fix for MathJax ghost text on selection - CRITICAL */
+      mjx-assistive-mml {
+          display: none !important;
+          user-select: none !important;
+          -webkit-user-select: none !important;
+          pointer-events: none !important;
+          width: 0 !important;
+          height: 0 !important;
+          overflow: hidden !important;
+          position: absolute !important;
+      }
     </style>
     <script>
       tailwind.config = {
@@ -568,6 +618,7 @@
               'slide-in-up': 'slideInUp 0.3s ease-out forwards',
               'dynamic-dot': 'dynamic-dot 1.4s ease-in-out infinite',
               'slide-in-left': 'slideInLeft 0.3s ease-out forwards',
+              'ripple': 'ripple 1.5s infinite',
             }
           }
         }
@@ -580,7 +631,8 @@
     "@google/genai": "https://aistudiocdn.com/@google/genai@^1.29.0",
     "react/": "https://aistudiocdn.com/react@^19.2.0/",
     "react": "https://aistudiocdn.com/react@^19.2.0",
-    "react-dom": "https://aistudiocdn.com/react-dom@^19.2.0"
+    "react-dom": "https://aistudiocdn.com/react-dom@^19.2.0",
+    "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@2"
   }
 }
 </script>

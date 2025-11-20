@@ -1,11 +1,13 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { GoogleGenAI, Chat } from '@google/genai';
 import { type Message, type ChatSession, type User, type MindMapNode, type Mode, type FollowUpAction } from '../types';
 import ChatMessage from './ChatMessage';
 import ChatInput from './ChatInput';
 import TypingIndicator from './TypingIndicator';
-import { CreateExamIcon, SolveExamIcon, CreateScheduleIcon, NewChatIcon, KlAiLogo, UserIcon, LogoutIcon, EditIcon, SearchIcon, PinIcon, LearnModeIcon, ExamModeIcon, DownloadIcon, SunIcon, MoonIcon, TheoryModeIcon, MenuIcon, FeaturesIcon, FlashcardIcon, ShuffleIcon, CloneIcon, CalculatorIcon, PeriodicTableIcon, MinimizeIcon, MaximizeIcon, RestoreIcon, CreateFileIcon, MindMapIcon, TrashIcon, SettingsIcon, MoreHorizontalIcon, KeyIcon } from './Icons';
+import { CreateExamIcon, SolveExamIcon, CreateScheduleIcon, NewChatIcon, KlAiLogo, UserIcon, LogoutIcon, EditIcon, SearchIcon, PinIcon, LearnModeIcon, ExamModeIcon, DownloadIcon, SunIcon, MoonIcon, TheoryModeIcon, MenuIcon, FeaturesIcon, FlashcardIcon, ShuffleIcon, CloneIcon, CalculatorIcon, PeriodicTableIcon, MinimizeIcon, MaximizeIcon, RestoreIcon, CreateFileIcon, MindMapIcon, TrashIcon, SettingsIcon, MoreHorizontalIcon, KeyIcon, MagicIcon, PresentationIcon, GraderIcon, DocumentSearchIcon, TimerIcon, ChartIcon, LockIcon, ScaleIcon, DiceIcon, NotebookIcon, GamepadIcon } from './Icons';
+import { api } from '../utils/api';
 
 // Lazy load heavy components
 const SettingsModal = React.lazy(() => import('./SettingsModal'));
@@ -14,13 +16,48 @@ const Calculator = React.lazy(() => import('./Calculator'));
 const PeriodicTable = React.lazy(() => import('./PeriodicTable'));
 const ToolModal = React.lazy(() => import('./ToolModal'));
 const MindMapModal = React.lazy(() => import('./MindMapModal'));
+const Whiteboard = React.lazy(() => import('./Whiteboard'));
+const PomodoroTimer = React.lazy(() => import('./PomodoroTimer'));
+const UnitConverter = React.lazy(() => import('./UnitConverter'));
+const ProbabilitySim = React.lazy(() => import('./ProbabilitySim'));
+const FormulaNotebook = React.lazy(() => import('./FormulaNotebook'));
+const BreathingExercise = React.lazy(() => import('./BreathingExercise'));
+const LofiPlayer = React.lazy(() => import('./LofiPlayer'));
+const TarotReader = React.lazy(() => import('./TarotReader'));
+const EntertainmentMenu = React.lazy(() => import('./EntertainmentMenu'));
 
 
 const DEMO_MESSAGE_LIMIT = 10;
-// Use Gemini 2.5 Flash for robust performance and stability on Vercel
 const MODEL_NAME = 'gemini-2.5-flash';
+// Upgraded to Imagen 4 for better quality
+const IMAGE_MODEL_NAME = 'imagen-4.0-generate-001';
 
-const getSystemInstruction = (role: User['aiRole'] = 'assistant', tone: User['aiTone'] = 'balanced'): string => {
+declare global {
+    interface Window {
+        XLSX: any;
+    }
+}
+
+const getSystemInstruction = (role: User['aiRole'] = 'assistant', tone: User['aiTone'] = 'balanced', customInstruction?: string, currentMode?: Mode): string => {
+    
+    // --- SPECIAL MODES OVERRIDE (Ignore user settings) ---
+    if (currentMode === 'rpg') {
+        return `Bạn là Game Master (GM) của một trò chơi nhập vai dạng văn bản (Text Adventure). Hãy dẫn dắt người chơi qua một cốt truyện thú vị, sáng tạo. Bắt đầu bằng việc mô tả bối cảnh hiện tại và hỏi người chơi muốn làm gì. Luôn mô tả hậu quả của hành động một cách sinh động. Giữ giọng văn lôi cuốn.`;
+    }
+    if (currentMode === 'roast') {
+        return `Bạn là một danh hài độc thoại cực kỳ xéo xắt, chua ngoa và hài hước (Roast Master). Nhiệm vụ của bạn là 'khịa', châm biếm và 'roast' người dùng một cách thâm thúy nhưng buồn cười. Hãy dùng ngôn ngữ mạnh, slang, teencode, meme nếu cần. Biến mọi câu nói của người dùng thành trò đùa. Đừng quá nghiêm túc.`;
+    }
+    if (currentMode === 'akinator') {
+        return `Bạn là Thần đèn Akinator. Người dùng đang nghĩ về một nhân vật nổi tiếng (thực hoặc hư cấu). Nhiệm vụ của bạn là đoán ra nhân vật đó bằng cách đặt các câu hỏi Yes/No. Hãy hỏi tối đa 20 câu. Sau mỗi câu trả lời, hãy đưa ra câu hỏi tiếp theo hoặc đoán nhân vật.`;
+    }
+    if (currentMode === 'tarot') {
+        return `Bạn là một Tarot Reader (Người đọc bài Tarot) chuyên nghiệp, huyền bí và sâu sắc. Bạn sẽ nhận được tên lá bài và vấn đề của người dùng. Hãy giải thích ý nghĩa lá bài trong bối cảnh đó, đưa ra lời khuyên chữa lành. Giọng văn nhẹ nhàng, thấu cảm, mang màu sắc tâm linh.`;
+    }
+    if (currentMode === 'mbti') {
+        return `Bạn là chuyên gia tâm lý học. Hãy đặt các câu hỏi trắc nghiệm ngắn để xác định tính cách MBTI của người dùng. Hỏi từng câu một. Sau khoảng 10 câu, hãy đưa ra dự đoán về nhóm tính cách của họ.`;
+    }
+
+    // --- STANDARD MODES ---
     let roleDescription = '';
     switch (role) {
         case 'teacher':
@@ -50,9 +87,61 @@ const getSystemInstruction = (role: User['aiRole'] = 'assistant', tone: User['ai
             break;
     }
 
-    const basePrompt = 'Bạn là KL AI, một trợ lý AI được thiết kế đặc biệt cho giáo viên và học sinh Việt Nam. Các câu trả lời của bạn phải bằng tiếng Việt. Sử dụng markdown để định dạng khi thích hợp, bao gồm cả công thức toán học LaTeX (sử dụng $...$ cho inline và $$...$$ cho block). Để vẽ đồ thị hàm số, hãy sử dụng khối mã "graph". Ví dụ:\n```graph\nf(x) = x^2\ny = sin(x)\n```\nĐể tạo bảng biến thiên, TUYỆT ĐỐI phải sử dụng khối mã `bbt`. Ví dụ:\n```bbt\n| x | -∞ | 1 | +∞ |\n|---|---|---|---|\n| y\'| | + | 0 | - |\n| y | | ↗ | 2 | ↘ |\n```\nNếu không dùng `bbt`, bảng sẽ bị lỗi. Để tạo bảng xét dấu, hãy sử dụng khối mã `bsd`. Ví dụ:\n```bsd\n| x | -∞ | 2 | +∞ |\n|---|---|---|---|\n| f(x) | - | 0 | + |\n```';
+    const basePrompt = `Bạn là KL AI, một trợ lý AI được thiết kế đặc biệt cho giáo viên và học sinh Việt Nam. Các câu trả lời của bạn phải bằng tiếng Việt. Sử dụng markdown để định dạng khi thích hợp, bao gồm cả công thức toán học LaTeX (sử dụng $...$ cho inline và $$...$$ cho block). 
+    
+    1. Đồ thị hàm số: sử dụng khối mã "graph". Ví dụ:
+    \`\`\`graph
+    f(x) = x^2
+    y = sin(x)
+    \`\`\`
+    
+    2. Bảng biến thiên: TUYỆT ĐỐI phải sử dụng khối mã \`bbt\`. Ví dụ:
+    \`\`\`bbt
+    | x | -∞ | 1 | +∞ |
+    |---|---|---|---|
+    | y'| | + | 0 | - |
+    | y | | ↗ | 2 | ↘ |
+    \`\`\`
+    
+    3. Bảng xét dấu: sử dụng khối mã \`bsd\`. Ví dụ:
+    \`\`\`bsd
+    | x | -∞ | 2 | +∞ |
+    |---|---|---|---|
+    | f(x) | - | 0 | + |
+    \`\`\`
 
-    return `${roleDescription} ${toneInstruction} ${basePrompt}`;
+    4. Biểu đồ dữ liệu: Khi được yêu cầu vẽ biểu đồ từ dữ liệu, bạn hãy trả về một khối JSON đặc biệt có tên \`chart_json\`. JSON này phải tuân theo cấu hình của Chart.js. KHÔNG dùng code block thông thường cho cái này, hãy bọc JSON trong block \`\`\`chart_json ... \`\`\`.
+    Ví dụ:
+    \`\`\`chart_json
+    {
+        "type": "bar",
+        "data": {
+            "labels": ["A", "B", "C"],
+            "datasets": [{ "label": "Dữ liệu", "data": [10, 20, 30] }]
+        }
+    }
+    \`\`\`
+
+    5. Lập lịch (Google Calendar): Khi được yêu cầu tạo lịch, ngoài văn bản, hãy trả về khối JSON \`\`\`schedule_json\`\`\` để tạo nút thêm vào lịch.
+    Ví dụ:
+    \`\`\`schedule_json
+    {
+        "title": "Học Toán",
+        "startTime": "2023-10-27T08:00:00",
+        "endTime": "2023-10-27T10:00:00",
+        "details": "Ôn tập chương 1",
+        "location": "Nhà"
+    }
+    \`\`\`
+    `;
+
+    let finalPrompt = `${roleDescription} ${toneInstruction} ${basePrompt}`;
+
+    if (customInstruction && customInstruction.trim()) {
+        finalPrompt += `\n\n## HƯỚNG DẪN TÙY CHỈNH TỪ NGƯỜI DÙNG (MỨC ĐỘ ƯU TIÊN CAO NHẤT - BẮT BUỘC TUÂN THỦ TUYỆT ĐỐI):\n${customInstruction.trim()}`;
+    }
+
+    return finalPrompt;
 }
 
 const parseFlashcardsFromResponse = (text: string): { intro: string; cards: { term: string; definition: string }[] } | null => {
@@ -79,6 +168,22 @@ const parseFlashcardsFromResponse = (text: string): { intro: string; cards: { te
     if (cards.length === 0) return null;
   
     return { intro, cards };
+};
+
+const parseSpecialJsonBlock = (text: string, blockName: string): any | null => {
+    // Improved regex to handle optional newlines/spaces after the block name
+    const regex = new RegExp(`\`\`\`${blockName}\\s*([\\s\\S]*?)\`\`\``);
+    const match = text.match(regex);
+    if (match && match[1]) {
+        try {
+            let jsonStr = match[1].trim();
+            return JSON.parse(jsonStr);
+        } catch (e) {
+            console.error(`Failed to parse ${blockName}`, e);
+            return null;
+        }
+    }
+    return null;
 };
 
 const parseMindMapFromResponse = (text: string): { intro: string, data: MindMapNode | null } => {
@@ -131,7 +236,6 @@ const parseMindMapFromResponse = (text: string): { intro: string, data: MindMapN
     return { intro, data: root };
 };
 
-// Helper to convert MindMapNode back to text for history context
 const mindMapToMarkdown = (node: MindMapNode, depth = 0): string => {
     const indent = '  '.repeat(depth);
     let result = `${indent}- ${node.name}\n`;
@@ -141,13 +245,10 @@ const mindMapToMarkdown = (node: MindMapNode, depth = 0): string => {
     return result;
 };
 
-// Helper to convert Message format to Gemini Content format
 const mapMessageToHistory = (m: Message) => {
    const parts: any[] = [];
    if (m.text) parts.push({ text: m.text });
    
-   // If there's mind map data but no explicit text description of it in the message body,
-   // append it as a text part so the model knows the context.
    if (m.mindMapData) {
        const mindMapText = `\n[Context: Mind Map Data]\n${mindMapToMarkdown(m.mindMapData)}`;
        parts.push({ text: mindMapText });
@@ -155,7 +256,7 @@ const mapMessageToHistory = (m: Message) => {
 
    if (m.files) {
        m.files.forEach(file => {
-           if (file.mimeType.startsWith('image/')) {
+           if (file.mimeType.startsWith('image/') || file.mimeType === 'application/pdf' || file.mimeType.startsWith('text/')) {
                const base64Data = file.dataUrl.split(',')[1];
                parts.push({
                    inlineData: {
@@ -166,7 +267,6 @@ const mapMessageToHistory = (m: Message) => {
            }
        });
    }
-   // Filter out empty parts (e.g. messages with just mode change but no text/files)
    if (parts.length === 0) return null;
    
    return {
@@ -192,20 +292,52 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
   const [theme, setTheme] = useState<'light' | 'dark'>('light');
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const [isFeaturesPopoverOpen, setIsFeaturesPopoverOpen] = useState(false);
+  const [isEntertainmentPopoverOpen, setIsEntertainmentPopoverOpen] = useState(false);
   const [flashcardData, setFlashcardData] = useState<{ term: string; definition: string }[] | null>(null);
-  // Stores both the data and the index of the message it belongs to
   const [mindMapModalState, setMindMapModalState] = useState<{ data: MindMapNode, messageIndex: number } | null>(null);
   
   const [isCalculatorOpen, setIsCalculatorOpen] = useState(false);
   const [isPeriodicTableOpen, setIsPeriodicTableOpen] = useState(false);
+  const [isWhiteboardOpen, setIsWhiteboardOpen] = useState(false);
+  const [isPomodoroOpen, setIsPomodoroOpen] = useState(false);
+  const [isUnitConverterOpen, setIsUnitConverterOpen] = useState(false);
+  const [isProbabilitySimOpen, setIsProbabilitySimOpen] = useState(false);
+  const [isFormulaNotebookOpen, setIsFormulaNotebookOpen] = useState(false);
+  const [isBreathingOpen, setIsBreathingOpen] = useState(false);
+  const [isTarotOpen, setIsTarotOpen] = useState(false);
+  
   const [demoMessageCount, setDemoMessageCount] = useState(0);
   const [showDemoLimitModal, setShowDemoLimitModal] = useState(false);
+  const [showLoginPromptModal, setShowLoginPromptModal] = useState(false);
 
 
   const chatInstances = useRef<{ [key: string]: Chat }>({});
   const chatContainerRef = useRef<HTMLDivElement>(null);
   const featuresPopoverRef = useRef<HTMLDivElement>(null);
   const featuresButtonRef = useRef<HTMLDivElement>(null);
+  const entertainmentPopoverRef = useRef<HTMLDivElement>(null);
+  const entertainmentButtonRef = useRef<HTMLDivElement>(null);
+
+  const menuItems = [
+      { id: 'chat', label: 'Trò chuyện', icon: <UserIcon className="w-5 h-5" /> },
+      { id: 'chat_document', label: 'Chat tài liệu', icon: <DocumentSearchIcon className="w-5 h-5 text-blue-500" /> },
+      { id: 'data_analysis', label: 'Phân tích dữ liệu', icon: <ChartIcon className="w-5 h-5 text-teal-500" /> },
+      { id: 'generate_image', label: 'Tạo ảnh AI', icon: <MagicIcon className="w-5 h-5 text-purple-500" /> },
+      { id: 'whiteboard', label: 'Bảng trắng', icon: <PresentationIcon className="w-5 h-5 text-blue-500" />, action: () => setIsWhiteboardOpen(true) },
+      { id: 'probability', label: 'Xác suất', icon: <DiceIcon className="w-5 h-5 text-indigo-500" />, action: () => setIsProbabilitySimOpen(true) },
+      { id: 'grader', label: 'Chấm bài', icon: <GraderIcon className="w-5 h-5 text-green-600" /> },
+      { id: 'create_exam', label: 'Tạo đề thi', icon: <CreateExamIcon className="w-5 h-5" /> },
+      { id: 'solve_exam', label: 'Giải đề', icon: <SolveExamIcon className="w-5 h-5" /> },
+      { id: 'create_schedule', label: 'Lập lịch', icon: <CreateScheduleIcon className="w-5 h-5" /> },
+      { id: 'learn', label: 'Học tập', icon: <LearnModeIcon className="w-5 h-5" /> },
+      { id: 'exam', label: 'Thi thử', icon: <ExamModeIcon className="w-5 h-5" /> },
+      { id: 'theory', label: 'Lý thuyết', icon: <TheoryModeIcon className="w-5 h-5" /> },
+      { id: 'flashcard', label: 'Flashcard', icon: <FlashcardIcon className="w-5 h-5" /> },
+      { id: 'mind_map', label: 'Sơ đồ tư duy', icon: <MindMapIcon className="w-5 h-5" /> },
+      { id: 'scramble_exam', label: 'Trộn đề', icon: <ShuffleIcon className="w-5 h-5" /> },
+      { id: 'similar_exam', label: 'Đề tương tự', icon: <CloneIcon className="w-5 h-5" /> },
+      { id: 'create_file', label: 'Tạo file', icon: <CreateFileIcon className="w-5 h-5" /> },
+  ];
   
   useEffect(() => {
     const savedTheme = currentUser?.theme || localStorage.getItem('kl-ai-theme') as 'light' | 'dark' || 'light';
@@ -221,7 +353,6 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
     localStorage.setItem('kl-ai-theme', theme);
   }, [theme]);
 
-  // Restore demo count from localStorage
   useEffect(() => {
     if (currentUser?.isDemo) {
         const savedCount = localStorage.getItem('kl-ai-demo-count');
@@ -250,21 +381,40 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
     document.body.style.fontFamily = currentUser?.fontPreference || defaultFont;
   }, [currentUser?.fontPreference]);
 
-  // --- Chat Persistence Logic ---
-  const CHATS_STORAGE_KEY = `kl-ai-chats-${currentUser.username}`;
-
-  const handleNewChat = useCallback(async () => {
+  const handleNewChat = useCallback(async (initialMode: Mode = 'chat', initialMessage?: Message) => {
     if (!currentUser) return;
     
+    // When switching to special modes (RPG, Roast, etc), we want to start clean
+    const isSpecialMode = ['rpg', 'roast', 'akinator', 'tarot', 'mbti'].includes(initialMode);
+    const title = isSpecialMode ? `Chế độ ${initialMode.toUpperCase()}` : 'Đoạn chat mới';
+
     let newChat: ChatSession;
     try {
         const newId = Date.now().toString();
         newChat = {
           id: newId,
-          title: 'Đoạn chat mới',
-          messages: [{ role: 'model', text: "Xin chào! Tôi là KL AI, trợ lý ảo của bạn. Tôi có thể giúp gì cho bạn hôm nay?" }],
+          title: title,
+          messages: initialMessage ? [initialMessage] : [{ role: 'model', text: "Xin chào! Tôi là KL AI. Tôi có thể giúp gì cho bạn hôm nay?" }],
           isPinned: false,
         };
+        
+        if (isSpecialMode && !initialMessage) {
+             // Auto-start message for special modes
+             if (initialMode === 'rpg') newChat.messages = [{ role: 'model', text: "Chào mừng lữ khách! Bạn muốn phiêu lưu trong bối cảnh nào (Trung cổ, Cyberpunk, Kiếm hiệp...)?", mode: initialMode }];
+             if (initialMode === 'roast') newChat.messages = [{ role: 'model', text: "Ồ, lại thêm một kẻ muốn nghe sự thật trần trụi à? Được thôi, nói gì đi nào.", mode: initialMode }];
+             if (initialMode === 'akinator') newChat.messages = [{ role: 'model', text: "Ta là Thần đèn Akinator. Hãy nghĩ về một nhân vật và ta sẽ đoán ra. Sẵn sàng chưa?", mode: initialMode }];
+             if (initialMode === 'mbti') newChat.messages = [{ role: 'model', text: "Chào bạn. Hãy bắt đầu bài trắc nghiệm tính cách MBTI nhé. Bạn sẵn sàng chưa?", mode: initialMode }];
+        }
+
+        // If initialMessage is from User (like Tarot), we need to append a placeholder model response
+        if (initialMessage && initialMessage.role === 'user') {
+            newChat.messages.push({ role: 'model', text: '', timestamp: new Date().toISOString(), mode: initialMode });
+        }
+
+        // Use API to save instead of direct local storage
+        if (!currentUser.isDemo) {
+            await api.saveChatSession(currentUser.username, newChat);
+        }
     } catch (error) {
         console.error("Không thể tạo cuộc trò chuyện mới:", error);
         setError("Không thể tạo cuộc trò chuyện mới. Vui lòng thử lại.");
@@ -273,74 +423,115 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
 
     setChatSessions(prev => [newChat, ...prev]);
     setActiveChatId(newChat.id);
+    setMode(initialMode);
     setIsMobileSidebarOpen(false);
     
-    console.log("Initializing New Chat with Model:", MODEL_NAME);
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
-    const systemInstruction = getSystemInstruction(currentUser?.aiRole, currentUser?.aiTone);
-    chatInstances.current[newChat.id] = ai.chats.create({
+    // Important: Pass the current mode to getSystemInstruction to enable override
+    const systemInstruction = getSystemInstruction(currentUser?.aiRole, currentUser?.aiTone, currentUser?.customInstruction, initialMode);
+    const chatInstance = ai.chats.create({
         model: MODEL_NAME,
         config: { systemInstruction },
     });
-  }, [currentUser]);
+    
+    chatInstances.current[newChat.id] = chatInstance;
 
-  // Load chats from localStorage
-  useEffect(() => {
-    if (!currentUser) return;
-    const loadChats = async () => {
+    // TRIGGER RESPONSE IMMEDIATELY IF IT IS USER MESSAGE (e.g. Tarot)
+    if (initialMessage && initialMessage.role === 'user') {
+        setIsLoading(true);
         try {
-            const savedChats = localStorage.getItem(CHATS_STORAGE_KEY);
-            if (savedChats) {
-                const parsedChats: ChatSession[] = JSON.parse(savedChats);
-                if (parsedChats.length > 0) {
-                    setChatSessions(parsedChats);
-                    const lastActive = parsedChats.find(p => !p.isPinned) || parsedChats[0];
-                    setActiveChatId(lastActive.id);
-                    return;
+            const result = await chatInstance.sendMessageStream({ 
+                message: [{ text: initialMessage.text }] 
+            });
+            
+            let fullText = '';
+            for await (const chunk of result) {
+                const chunkText = chunk.text;
+                if (chunkText) {
+                    fullText += chunkText;
+                    setChatSessions(prev => 
+                        prev.map(chat => {
+                            if (chat.id !== newChat.id) return chat;
+                            const newMessages = [...chat.messages];
+                            const lastMsg = { ...newMessages[newMessages.length - 1] };
+                            // Ensure we are updating the placeholder model message
+                            if (lastMsg.role === 'model') {
+                                lastMsg.text = fullText;
+                            }
+                            newMessages[newMessages.length - 1] = lastMsg;
+                            return { ...chat, messages: newMessages };
+                        })
+                    );
                 }
             }
-            // Only create new chat if no saved chats
-            handleNewChat();
+        } catch (err) {
+             console.error("Initial response failed", err);
+             setChatSessions(prev => 
+                prev.map(chat => {
+                    if (chat.id !== newChat.id) return chat;
+                    const newMessages = [...chat.messages];
+                    const lastMsg = { ...newMessages[newMessages.length - 1] };
+                    lastMsg.isError = true;
+                    lastMsg.text = "Đã có lỗi xảy ra khi xử lý yêu cầu.";
+                    newMessages[newMessages.length - 1] = lastMsg;
+                    return { ...chat, messages: newMessages };
+                })
+            );
+        } finally {
+            setIsLoading(false);
+        }
+    }
+  }, [currentUser]);
+
+  // Load chats using API
+  useEffect(() => {
+    if (!currentUser) return;
+    
+    const loadChats = async () => {
+        try {
+            // Call API to get chats (Cloud or Local based on config)
+            const loadedChats = await api.getChatSessions(currentUser.username);
+            
+            if (loadedChats.length > 0) {
+                setChatSessions(loadedChats);
+                const lastActive = loadedChats.find(p => !p.isPinned) || loadedChats[0];
+                setActiveChatId(lastActive.id);
+            } else {
+                handleNewChat();
+            }
         } catch (e) {
             console.error("Không thể tải lịch sử chat", e);
             handleNewChat();
         }
     };
     loadChats();
-  }, [currentUser.username]); // Reload if user changes (though App unmounts on logout)
+  }, [currentUser.username]);
 
-  // Save chats to localStorage on change
-  useEffect(() => {
-      if (currentUser && chatSessions.length > 0) {
-          try {
-            localStorage.setItem(CHATS_STORAGE_KEY, JSON.stringify(chatSessions));
-          } catch (error) {
-            console.error("Lỗi lưu lịch sử chat (có thể do bộ nhớ đầy):", error);
-          }
-      }
-  }, [chatSessions, currentUser.username]);
-
-
-  
+  // Initialize Chat Instances (GenAI)
   useEffect(() => {
     if (!currentUser) return;
-    // Check API Key existence for debugging
     if (!process.env.API_KEY) {
-        console.error("Warning: API_KEY is missing from environment variables!");
+        console.error("Warning: API_KEY is missing!");
     }
 
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
-    const systemInstruction = getSystemInstruction(currentUser?.aiRole, currentUser?.aiTone);
     
-    // Only initialize instances for sessions that don't have one or need update
     chatSessions.forEach(session => {
         if (!chatInstances.current[session.id]) {
+            // Detect mode from the last message if possible, or default to 'chat'
+            const lastMsgMode = session.messages[session.messages.length - 1]?.mode || 'chat';
+            
+            const systemInstruction = getSystemInstruction(
+                currentUser?.aiRole, 
+                currentUser?.aiTone, 
+                currentUser?.customInstruction, 
+                lastMsgMode // Pass the mode found in session
+            );
+            
             const chatHistory = session.messages
                 .map(mapMessageToHistory)
                 .filter((content): content is { role: string; parts: any[] } => content !== null);
 
-            // Remove the welcome message (first message) from history sent to API
-            // Assuming the first message is always the welcome message from model
             const historyWithoutWelcome = chatHistory.length > 0 && chatHistory[0].role === 'model' 
                 ? chatHistory.slice(1) 
                 : chatHistory;
@@ -354,6 +545,23 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
     });
   }, [chatSessions, currentUser]);
 
+  // Auto-save active chat to API when it changes
+  useEffect(() => {
+      if (!activeChatId || !currentUser || currentUser.isDemo) return;
+      const currentSession = chatSessions.find(c => c.id === activeChatId);
+      if (currentSession) {
+          const save = async () => {
+              try {
+                  await api.saveChatSession(currentUser.username, currentSession);
+              } catch (e) {
+                  console.error("Failed to sync chat", e);
+              }
+          };
+          save();
+      }
+  }, [chatSessions, activeChatId, currentUser]);
+
+
   useEffect(() => {
     if (chatContainerRef.current) {
       chatContainerRef.current.scrollTo({
@@ -365,6 +573,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
+      // Close Features Popover
       if (
         featuresPopoverRef.current && 
         !featuresPopoverRef.current.contains(event.target as Node) &&
@@ -372,6 +581,15 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
         !featuresButtonRef.current.contains(event.target as Node)
       ) {
         setIsFeaturesPopoverOpen(false);
+      }
+      // Close Entertainment Popover
+      if (
+        entertainmentPopoverRef.current && 
+        !entertainmentPopoverRef.current.contains(event.target as Node) &&
+        entertainmentButtonRef.current &&
+        !entertainmentButtonRef.current.contains(event.target as Node)
+      ) {
+        setIsEntertainmentPopoverOpen(false);
       }
     };
 
@@ -402,16 +620,47 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
         return null;
     }
   }, []);
+  
+  // Helper to read spreadsheet files
+  const readSpreadsheet = (file: { data: string; mimeType: string }): Promise<string | null> => {
+      return new Promise((resolve) => {
+          try {
+              // Convert base64 to binary string
+              const binaryStr = atob(file.data);
+              const len = binaryStr.length;
+              const bytes = new Uint8Array(len);
+              for (let i = 0; i < len; i++) {
+                  bytes[i] = binaryStr.charCodeAt(i);
+              }
+              
+              // Read workbook
+              if (window.XLSX) {
+                  const workbook = window.XLSX.read(bytes.buffer, { type: 'array' });
+                  const firstSheetName = workbook.SheetNames[0];
+                  const worksheet = workbook.Sheets[firstSheetName];
+                  // Convert to CSV text
+                  const csv = window.XLSX.utils.sheet_to_csv(worksheet);
+                  resolve(csv);
+              } else {
+                  resolve(null);
+              }
+          } catch (e) {
+              console.error("Error reading spreadsheet", e);
+              resolve(null);
+          }
+      });
+  };
 
   const handleSendMessage = useCallback(async (text: string, files: { name: string; data: string; mimeType: string }[] = []) => {
     if (!activeChatId || isLoading || !currentUser) return;
     
-    // Demo Limit Check
+    // DEMO LIMIT CHECK
     if (currentUser.isDemo) {
         if (demoMessageCount >= DEMO_MESSAGE_LIMIT) {
             setShowDemoLimitModal(true);
             return;
         }
+        // Increment locally for UI
         setDemoMessageCount(prev => {
             const newCount = prev + 1;
             localStorage.setItem('kl-ai-demo-count', newCount.toString());
@@ -419,7 +668,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
         });
     }
 
-    if (!chatInstances.current[activeChatId]) return;
+    if (!chatInstances.current[activeChatId] && mode !== 'generate_image') return;
     if (!text.trim() && files.length === 0) return;
 
     const userMessage: Message = {
@@ -434,6 +683,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
         mode: mode,
     };
 
+    // Optimistic Update: Add User Message
     setChatSessions(prev =>
         prev.map(chat =>
             chat.id === activeChatId
@@ -445,110 +695,222 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
     setError(null);
     setFlashcardData(null);
 
+    // Logic for Generating Title (only for first message)
     const generateTitleIfNeeded = async (promptText: string) => {
         const activeChat = chatSessions.find(c => c.id === activeChatId);
-        // Check for 0 existing user messages before this one was added
         const isFirstUserMessage = activeChat ? activeChat.messages.filter(m => m.role === 'user').length === 0 : false;
 
         if (isFirstUserMessage && promptText) {
             const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
             try {
-                const titleGenPrompt = `Dựa vào yêu cầu đầu tiên này: "${promptText}", hãy tạo một tiêu đề ngắn gọn (tối đa 5 từ) bằng tiếng Việt cho cuộc trò chuyện. Nếu có tệp đính kèm, hãy mô tả ngắn gọn mục đích. Chỉ trả về tiêu đề, không thêm bất kỳ lời giải thích hay định dạng nào.`;
+                const titleGenPrompt = `Dựa vào yêu cầu đầu tiên này: "${promptText}", hãy tạo một tiêu đề ngắn gọn (tối đa 5 từ) bằng tiếng Việt cho cuộc trò chuyện. Chỉ trả về tiêu đề.`;
                 const titleResponse = await ai.models.generateContent({ model: MODEL_NAME, contents: titleGenPrompt });
                 let newTitle = titleResponse.text.trim().replace(/^"|"$/g, '');
                 if (newTitle) {
                     setChatSessions(prev =>
                         prev.map(chat => chat.id === activeChatId ? { ...chat, title: newTitle } : chat)
                     );
+                    if (activeChat && !currentUser.isDemo) {
+                        await api.saveChatSession(currentUser.username, { ...activeChat, title: newTitle });
+                    }
                 }
-            } catch (titleError) { console.error("Không thể tạo tiêu đề cho cuộc trò chuyện", titleError); }
+            } catch (titleError) { console.error("Không thể tạo tiêu đề", titleError); }
         }
     };
 
-    generateTitleIfNeeded(text);
+    if (mode !== 'generate_image') {
+        generateTitleIfNeeded(text);
+    }
 
     try {
-        const activeChat = chatInstances.current[activeChatId];
-        
-        const parts: any[] = [{ text }];
-        if (files.length > 0) {
-            files.forEach(file => {
-                parts.push({
-                    inlineData: {
-                        mimeType: file.mimeType,
-                        data: file.data
-                    }
-                });
-            });
-        }
-
-        const result = await activeChat.sendMessageStream({ message: parts });
-        let fullText = '';
-        
-        for await (const chunk of result) {
-            const chunkText = chunk.text;
-            if (chunkText) {
-                fullText += chunkText;
-                setChatSessions(prev => 
-                    prev.map(chat => {
-                        if (chat.id !== activeChatId) return chat;
-                        const newMessages = [...chat.messages];
-                        // Correctly copy the object before mutation to avoid React issues
-                        const lastMsg = { ...newMessages[newMessages.length - 1] };
-                        if (lastMsg.role === 'model') {
-                            lastMsg.text = fullText;
-                        }
-                        newMessages[newMessages.length - 1] = lastMsg;
-                        return { ...chat, messages: newMessages };
-                    })
-                );
-            }
-        }
-
-        const flashcardData = parseFlashcardsFromResponse(fullText);
-        if (flashcardData) {
-             setChatSessions(prev => 
-                prev.map(chat => {
-                    if (chat.id !== activeChatId) return chat;
-                    const newMessages = [...chat.messages];
-                    const lastMsg = { ...newMessages[newMessages.length - 1] };
-                    lastMsg.flashcards = flashcardData.cards;
-                    newMessages[newMessages.length - 1] = lastMsg;
-                    return { ...chat, messages: newMessages };
-                })
-            );
-        }
-        
-        // Only parse Mind Map if we are in mind map mode
-        if (mode === 'mind_map') {
-            const mindMapData = parseMindMapFromResponse(fullText);
-            if (mindMapData.data) {
+        // --- IMAGE GENERATION MODE ---
+        if (mode === 'generate_image') {
+             const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
+             const response = await ai.models.generateImages({
+                model: IMAGE_MODEL_NAME,
+                prompt: text,
+                config: {
+                  numberOfImages: 1,
+                  aspectRatio: '1:1',
+                },
+             });
+             
+             const generatedImage = response.generatedImages?.[0]?.image;
+             
+             if (generatedImage) {
+                 const base64ImageBytes = generatedImage.imageBytes;
+                 const imageUrl = `data:image/png;base64,${base64ImageBytes}`;
+                 
                  setChatSessions(prev => 
                     prev.map(chat => {
                         if (chat.id !== activeChatId) return chat;
                         const newMessages = [...chat.messages];
                         const lastMsg = { ...newMessages[newMessages.length - 1] };
-                        lastMsg.mindMapData = mindMapData.data!;
+                        lastMsg.text = `Đã tạo ảnh dựa trên mô tả: "${text}"`;
+                        lastMsg.files = [{
+                             name: 'generated-image.png',
+                             dataUrl: imageUrl,
+                             mimeType: 'image/png'
+                        }];
                         newMessages[newMessages.length - 1] = lastMsg;
                         return { ...chat, messages: newMessages };
                     })
                 );
+             } else {
+                 throw new Error("Không nhận được hình ảnh từ AI.");
+             }
+        } 
+        // --- STANDARD CHAT MODE ---
+        else {
+            const activeChat = chatInstances.current[activeChatId];
+            
+            let messageTextToSend = text;
+            let finalFiles = [...files];
+            let hasProcessedSpreadsheet = false;
+
+            // Pre-process Excel files for Data Analysis
+            if (mode === 'data_analysis' && files.length > 0) {
+                 for (const file of files) {
+                     if (file.mimeType.includes('spreadsheet') || file.mimeType.includes('excel') || file.name.endsWith('.csv')) {
+                         const csvContent = await readSpreadsheet(file);
+                         if (csvContent) {
+                             messageTextToSend += `\n\n[Dữ liệu từ file ${file.name}]:\n${csvContent}\n`;
+                             // Don't send binary for spreadsheet since we sent text
+                             finalFiles = finalFiles.filter(f => f !== file);
+                             hasProcessedSpreadsheet = true;
+                         }
+                     }
+                 }
+            }
+
+            if (mode === 'grader') {
+                const graderPrompt = `BẠN LÀ MỘT GIÁO VIÊN CHẤM THI CHUYÊN NGHIỆP VÀ KHẮT KHE.
+Nhiệm vụ: Phân tích hình ảnh bài làm của học sinh, chấm điểm và đưa ra nhận xét chi tiết.
+
+Quy tắc chấm:
+1. Thang điểm: 10 (Có thể lẻ đến 0.25).
+2. Soi lỗi: Tìm kỹ các lỗi chính tả, lỗi tính toán, logic sai, hoặc trình bày cẩu thả.
+3. Format trả về: BẮT BUỘC dùng định dạng Markdown sau:
+
+# KẾT QUẢ CHẤM THI
+## Điểm số: [Số điểm]/10 
+(Nếu điểm < 5: 🔴, 5-7: 🟡, >8: 🟢)
+
+## ❌ Các lỗi cần sửa:
+- **[Vị trí/Dòng]**: [Mô tả lỗi sai] -> [Cách sửa đúng]
+- ...
+
+## 💡 Lời khuyên của giáo viên:
+[Nhận xét tổng quan và động viên ngắn gọn]
+
+Lưu ý: Nếu chữ quá xấu không dịch được, hãy báo cho tôi biết để chụp lại, đừng cố chấm bừa.
+
+Nội dung bài làm (nếu có ảnh, hãy xem ảnh):
+`;
+                messageTextToSend = `${graderPrompt}\n${messageTextToSend}`;
+            } else if (mode === 'chat_document') {
+                const docPrompt = `BẠN LÀ TRỢ LÝ PHÂN TÍCH TÀI LIỆU (RAG - Retrieval Augmented Generation).
+Nhiệm vụ: Trả lời câu hỏi của người dùng CHỈ DỰA TRÊN nội dung file đính kèm (PDF, Text...).
+Tuyệt đối không bịa đặt thông tin nếu không có trong tài liệu.
+Nếu thông tin không có trong file, hãy trả lời: "Thông tin này không có trong tài liệu được cung cấp."
+Hãy trích dẫn (số trang, mục) nếu có thể.
+`;
+                messageTextToSend = `${docPrompt}\n---\nCâu hỏi: ${messageTextToSend}`;
+            } else if (mode === 'data_analysis') {
+                messageTextToSend = `PHÂN TÍCH DỮ LIỆU:
+Hãy phân tích dữ liệu được cung cấp và trả lời câu hỏi.
+Nếu được yêu cầu vẽ biểu đồ, hãy trả về JSON \`chart_json\` (như hướng dẫn hệ thống).
+\n---\nYêu cầu: ${messageTextToSend}`;
+            }
+
+            const parts: any[] = [{ text: messageTextToSend }];
+            if (finalFiles.length > 0) {
+                finalFiles.forEach(file => {
+                    parts.push({
+                        inlineData: {
+                            mimeType: file.mimeType,
+                            data: file.data
+                        }
+                    });
+                });
+            }
+
+            const result = await activeChat.sendMessageStream({ message: parts });
+            let fullText = '';
+            
+            for await (const chunk of result) {
+                const chunkText = chunk.text;
+                if (chunkText) {
+                    fullText += chunkText;
+                    setChatSessions(prev => 
+                        prev.map(chat => {
+                            if (chat.id !== activeChatId) return chat;
+                            const newMessages = [...chat.messages];
+                            const lastMsg = { ...newMessages[newMessages.length - 1] };
+                            if (lastMsg.role === 'model') {
+                                lastMsg.text = fullText;
+                            }
+                            newMessages[newMessages.length - 1] = lastMsg;
+                            return { ...chat, messages: newMessages };
+                        })
+                    );
+                }
+            }
+
+            const flashcardData = parseFlashcardsFromResponse(fullText);
+            const chartConfig = parseSpecialJsonBlock(fullText, 'chart_json');
+            const scheduleData = parseSpecialJsonBlock(fullText, 'schedule_json');
+
+            setChatSessions(prev => 
+                prev.map(chat => {
+                    if (chat.id !== activeChatId) return chat;
+                    const newMessages = [...chat.messages];
+                    const lastMsg = { ...newMessages[newMessages.length - 1] };
+                    
+                    if (flashcardData) lastMsg.flashcards = flashcardData.cards;
+                    if (chartConfig) lastMsg.chartConfig = chartConfig;
+                    if (scheduleData) lastMsg.scheduleData = scheduleData;
+
+                    newMessages[newMessages.length - 1] = lastMsg;
+                    return { ...chat, messages: newMessages };
+                })
+            );
+            
+            if (mode === 'mind_map') {
+                const mindMapData = parseMindMapFromResponse(fullText);
+                if (mindMapData.data) {
+                     setChatSessions(prev => 
+                        prev.map(chat => {
+                            if (chat.id !== activeChatId) return chat;
+                            const newMessages = [...chat.messages];
+                            const lastMsg = { ...newMessages[newMessages.length - 1] };
+                            lastMsg.mindMapData = mindMapData.data!;
+                            newMessages[newMessages.length - 1] = lastMsg;
+                            return { ...chat, messages: newMessages };
+                        })
+                    );
+                }
             }
         }
 
     } catch (error: any) {
-        console.error("Error sending message:", error);
-        // Log detailed error if available to help user troubleshoot
-        if (error.message) console.error("Detail:", error.message);
+        console.error("Error processing request:", error);
+        let errorMessage = "Đã có lỗi xảy ra khi xử lý yêu cầu. ";
+        
+        if (mode === 'generate_image') {
+            errorMessage = "Không thể tạo ảnh. Có thể do mô tả chứa nội dung không phù hợp hoặc dịch vụ đang bận.";
+        } else {
+            errorMessage += "(Kiểm tra API Key của bạn hoặc định dạng file)";
+        }
 
-        setError("Đã có lỗi xảy ra khi gửi tin nhắn. (Kiểm tra API Key của bạn)");
+        setError(errorMessage);
         setChatSessions(prev => 
             prev.map(chat => {
                 if (chat.id !== activeChatId) return chat;
                 const newMessages = [...chat.messages];
                 const lastMsg = { ...newMessages[newMessages.length - 1] };
                 lastMsg.isError = true;
-                lastMsg.text = "Xin lỗi, tôi gặp sự cố khi xử lý yêu cầu này. Vui lòng thử lại hoặc kiểm tra kết nối.";
+                lastMsg.text = errorMessage;
                 newMessages[newMessages.length - 1] = lastMsg;
                 return { ...chat, messages: newMessages };
             })
@@ -559,27 +921,40 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
   }, [activeChatId, chatSessions, mode, isLoading, currentUser, demoMessageCount]);
 
 
-  const handleDeleteChat = (chatId: string, e: React.MouseEvent) => {
+  const handleDeleteChat = async (chatId: string, e: React.MouseEvent) => {
       e.stopPropagation();
+      if (!currentUser) return;
+
       const newSessions = chatSessions.filter(c => c.id !== chatId);
       setChatSessions(newSessions);
       
-      // Update localStorage immediately after delete
-      if (newSessions.length > 0) {
-          localStorage.setItem(CHATS_STORAGE_KEY, JSON.stringify(newSessions));
-      } else {
-          localStorage.removeItem(CHATS_STORAGE_KEY);
-          handleNewChat();
+      if (!currentUser.isDemo) {
+          await api.deleteChatSession(currentUser.username, chatId);
       }
 
-      if (activeChatId === chatId) {
-          if (newSessions.length > 0) setActiveChatId(newSessions[0].id);
+      if (newSessions.length === 0) {
+          handleNewChat();
+      } else if (activeChatId === chatId) {
+          setActiveChatId(newSessions[0].id);
       }
   };
   
-  const togglePin = (chatId: string, e: React.MouseEvent) => {
+  const togglePin = async (chatId: string, e: React.MouseEvent) => {
       e.stopPropagation();
-      setChatSessions(prev => prev.map(c => c.id === chatId ? { ...c, isPinned: !c.isPinned } : c));
+      if (!currentUser) return;
+
+      let updatedSession: ChatSession | undefined;
+      setChatSessions(prev => prev.map(c => {
+          if (c.id === chatId) {
+              updatedSession = { ...c, isPinned: !c.isPinned };
+              return updatedSession;
+          }
+          return c;
+      }));
+      
+      if (updatedSession && !currentUser.isDemo) {
+          await api.saveChatSession(currentUser.username, updatedSession);
+      }
   };
   
   const handleUpdateUserInternal = async (updates: Partial<User>) => {
@@ -587,11 +962,14 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
       try {
           await onUpdateUser(updates);
           
-          if (updates.aiRole || updates.aiTone) {
+          if (updates.aiRole || updates.aiTone || updates.customInstruction !== undefined) {
                const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
-               const systemInstruction = getSystemInstruction(updates.aiRole || currentUser.aiRole, updates.aiTone || currentUser.aiTone);
+               const systemInstruction = getSystemInstruction(
+                   updates.aiRole || currentUser.aiRole, 
+                   updates.aiTone || currentUser.aiTone, 
+                   updates.customInstruction !== undefined ? updates.customInstruction : currentUser.customInstruction
+               );
                
-               // Re-initialize all chats with new persona
                chatSessions.forEach(session => {
                    const chatHistory = session.messages
                        .map(mapMessageToHistory)
@@ -618,7 +996,6 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
   const handleSaveMindMap = (newData: MindMapNode) => {
     if (!mindMapModalState || !activeChatId) return;
     
-    // Invalidate chat instance to force re-sync of context with the updated mind map data
     if (chatInstances.current[activeChatId]) {
         delete chatInstances.current[activeChatId];
     }
@@ -638,14 +1015,12 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
             return chat;
         })
     );
-    // Update local state so the modal reflects changes without closing
     setMindMapModalState(prev => prev ? { ...prev, data: newData } : null);
   };
 
   const handleCreateNewMindMap = (newData: MindMapNode) => {
     if (!activeChatId) return;
     
-    // Invalidate chat instance to force re-sync of context with the new mind map messages
     if (chatInstances.current[activeChatId]) {
         delete chatInstances.current[activeChatId];
     }
@@ -654,8 +1029,6 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
         prev.map(chat => {
             if (chat.id !== activeChatId) return chat;
             
-            // We create a synthetic User message and then a Model message
-            // This ensures the chat history maintains User -> Model alternation
             const userMsg: Message = {
                 role: 'user',
                 text: `Tách nhánh "${newData.name}" thành sơ đồ mới.`,
@@ -678,12 +1051,48 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
   };
 
   const handleOpenSettings = () => {
+      // Check for Demo User before opening settings
       if (currentUser?.isDemo) {
-          alert("Tính năng cài đặt không khả dụng cho tài khoản Demo. Vui lòng đăng ký để tùy chỉnh cá nhân hóa.");
+          setShowLoginPromptModal(true);
           return;
       }
       setIsSettingsOpen(true);
   };
+  
+  const handleWhiteboardCapture = (imageData: string) => {
+      const base64Data = imageData.split(',')[1];
+      handleSendMessage("Hãy giải bài toán hoặc phân tích hình ảnh này.", [{
+          name: 'whiteboard_drawing.png',
+          data: base64Data,
+          mimeType: 'image/png'
+      }]);
+      setIsWhiteboardOpen(false);
+  };
+
+  // Entertainment Menu Handler
+  const handleEntertainmentSelect = (selected: Mode | 'breathing') => {
+      setIsEntertainmentPopoverOpen(false);
+      if (selected === 'breathing') {
+          setIsBreathingOpen(true);
+      } else if (selected === 'tarot') {
+          setIsTarotOpen(true);
+      } else {
+          // Start new chat with specific mode
+          handleNewChat(selected);
+      }
+  };
+
+  const handleTarotReading = (cardName: string, question: string) => {
+      // Start new chat in 'tarot' mode with the context
+      const initialMessage: Message = {
+          role: 'user',
+          text: `Tôi vừa rút được lá bài Tarot: "${cardName}". Vấn đề của tôi là: "${question}". Hãy giải mã lá bài này và đưa ra lời khuyên cho tôi.`,
+          mode: 'tarot',
+          timestamp: new Date().toISOString()
+      };
+      handleNewChat('tarot', initialMessage);
+  };
+
 
   const activeChat = chatSessions.find(c => c.id === activeChatId);
   const pinnedChats = chatSessions.filter(c => c.isPinned);
@@ -709,10 +1118,25 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
                   <SettingsIcon className="w-5 h-5" />
               </button>
           </div>
+          
+          {currentUser.isDemo && (
+            <div className="px-4 py-2 bg-yellow-500/10 border-b border-yellow-500/20">
+                <div className="flex justify-between text-xs font-medium text-yellow-600 dark:text-yellow-500 mb-1">
+                    <span>Dùng thử miễn phí</span>
+                    <span>{DEMO_MESSAGE_LIMIT - demoMessageCount}/{DEMO_MESSAGE_LIMIT}</span>
+                </div>
+                <div className="w-full bg-yellow-500/20 rounded-full h-1.5">
+                    <div 
+                        className="bg-yellow-500 h-1.5 rounded-full transition-all duration-300" 
+                        style={{ width: `${((DEMO_MESSAGE_LIMIT - demoMessageCount) / DEMO_MESSAGE_LIMIT) * 100}%` }}
+                    ></div>
+                </div>
+            </div>
+          )}
 
           <div className="p-3">
               <button 
-                  onClick={handleNewChat}
+                  onClick={() => handleNewChat()}
                   className="w-full flex items-center gap-3 px-4 py-3 bg-brand text-white rounded-xl hover:bg-brand/90 transition-all shadow-lg shadow-brand/20 active:scale-[0.98] group"
               >
                   <NewChatIcon className="w-5 h-5 group-hover:rotate-90 transition-transform" />
@@ -801,12 +1225,10 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
 
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-background text-text-primary font-sans selection:bg-brand/20 selection:text-brand">
-      {/* Sidebar for Desktop */}
       <aside className="hidden md:block w-72 lg:w-80 flex-shrink-0 bg-sidebar/50 backdrop-blur-md border-r border-border transition-all duration-300">
         {renderSidebar()}
       </aside>
 
-      {/* Mobile Sidebar Overlay */}
       {isMobileSidebarOpen && (
         <div className="fixed inset-0 z-40 md:hidden">
           <div className="absolute inset-0 bg-black/60 backdrop-blur-sm transition-opacity" onClick={() => setIsMobileSidebarOpen(false)} />
@@ -816,9 +1238,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
         </div>
       )}
 
-      {/* Main Chat Area */}
       <main className="flex-1 flex flex-col h-full relative min-w-0">
-        {/* Header */}
         <header className="h-16 flex items-center justify-between px-4 border-b border-border bg-card/80 backdrop-blur-md z-10 sticky top-0">
             <div className="flex items-center gap-3 overflow-hidden">
                 <button onClick={() => setIsMobileSidebarOpen(true)} className="md:hidden p-2 -ml-2 rounded-lg hover:bg-sidebar text-text-secondary">
@@ -837,17 +1257,46 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
             </div>
             
             <div className="flex items-center gap-1 sm:gap-2">
-                 {/* Tools Buttons */}
+                 {/* Tools moved to header for quick access */}
                  <button onClick={() => setIsCalculatorOpen(true)} className="p-2 text-text-secondary hover:bg-sidebar rounded-lg transition-colors hidden sm:block" title="Máy tính">
                      <CalculatorIcon className="w-5 h-5" />
                  </button>
                  <button onClick={() => setIsPeriodicTableOpen(true)} className="p-2 text-text-secondary hover:bg-sidebar rounded-lg transition-colors hidden sm:block" title="Bảng tuần hoàn">
                      <PeriodicTableIcon className="w-5 h-5" />
                  </button>
+                 <button onClick={() => setIsFormulaNotebookOpen(true)} className="p-2 text-text-secondary hover:bg-sidebar rounded-lg transition-colors hidden sm:block" title="Sổ tay công thức">
+                     <NotebookIcon className="w-5 h-5" />
+                 </button>
+                 <button onClick={() => setIsUnitConverterOpen(true)} className="p-2 text-text-secondary hover:bg-sidebar rounded-lg transition-colors hidden sm:block" title="Đổi đơn vị">
+                     <ScaleIcon className="w-5 h-5" />
+                 </button>
+                 <button onClick={() => setIsPomodoroOpen(true)} className="p-2 text-text-secondary hover:bg-sidebar rounded-lg transition-colors hidden sm:block" title="Pomodoro Timer">
+                     <TimerIcon className="w-5 h-5" />
+                 </button>
                  
                  <div className="w-[1px] h-6 bg-border mx-1 hidden sm:block"></div>
+                 
+                 {/* Entertainment Menu */}
+                 <div className="relative" ref={entertainmentPopoverRef}>
+                     <button 
+                        ref={entertainmentButtonRef}
+                        onClick={() => setIsEntertainmentPopoverOpen(!isEntertainmentPopoverOpen)}
+                        className={`p-2 rounded-lg transition-colors flex items-center gap-2 ${isEntertainmentPopoverOpen ? 'bg-purple-500/10 text-purple-500' : 'text-text-secondary hover:bg-sidebar'}`}
+                        title="Giải trí & Chữa lành"
+                     >
+                         <GamepadIcon className="w-5 h-5" />
+                         <span className="hidden sm:inline text-sm font-medium">Giải trí</span>
+                     </button>
 
-                 {/* Features Dropdown */}
+                     {isEntertainmentPopoverOpen && (
+                         <div className="hidden sm:flex absolute z-50 bg-card border border-border shadow-xl p-0 animate-slide-in-up bottom-auto top-full left-auto right-0 mt-2 rounded-xl overflow-hidden">
+                             <React.Suspense fallback={<div className="p-4 text-center text-xs text-text-secondary">Đang tải menu...</div>}>
+                                <EntertainmentMenu onSelect={handleEntertainmentSelect} />
+                             </React.Suspense>
+                         </div>
+                     )}
+                 </div>
+
                  <div className="relative" ref={featuresPopoverRef}>
                       <button 
                         ref={featuresButtonRef}
@@ -858,29 +1307,27 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
                           <span className="hidden sm:inline text-sm font-medium">Chế độ</span>
                       </button>
                       
+                      {/* Desktop Menu (Dropdown) */}
                       {isFeaturesPopoverOpen && (
-                          <div className="absolute right-0 top-full mt-2 w-56 bg-card border border-border rounded-xl shadow-xl p-1.5 z-50 animate-slide-in-up origin-top-right">
-                              {[
-                                  { id: 'chat', label: 'Trò chuyện', icon: <UserIcon className="w-4 h-4" /> },
-                                  { id: 'create_exam', label: 'Tạo đề thi', icon: <CreateExamIcon className="w-4 h-4" /> },
-                                  { id: 'solve_exam', label: 'Giải đề', icon: <SolveExamIcon className="w-4 h-4" /> },
-                                  { id: 'create_schedule', label: 'Lập lịch học', icon: <CreateScheduleIcon className="w-4 h-4" /> },
-                                  { id: 'learn', label: 'Học tập', icon: <LearnModeIcon className="w-4 h-4" /> },
-                                  { id: 'exam', label: 'Thi thử', icon: <ExamModeIcon className="w-4 h-4" /> },
-                                  { id: 'theory', label: 'Lý thuyết', icon: <TheoryModeIcon className="w-4 h-4" /> },
-                                  { id: 'flashcard', label: 'Flashcard', icon: <FlashcardIcon className="w-4 h-4" /> },
-                                  { id: 'mind_map', label: 'Sơ đồ tư duy', icon: <MindMapIcon className="w-4 h-4" /> },
-                                  { id: 'scramble_exam', label: 'Trộn đề', icon: <ShuffleIcon className="w-4 h-4" /> },
-                                  { id: 'similar_exam', label: 'Đề tương tự', icon: <CloneIcon className="w-4 h-4" /> },
-                                  { id: 'create_file', label: 'Tạo file', icon: <CreateFileIcon className="w-4 h-4" /> },
-                              ].map((m) => (
+                          <div className="hidden sm:flex absolute z-50 bg-card border border-border shadow-xl p-2 animate-slide-in-up bottom-auto top-full left-auto right-0 mt-2 w-64 rounded-xl flex-col gap-1 max-h-[60vh] overflow-y-auto origin-top-right scrollbar-thin scrollbar-thumb-border">
+                              {menuItems.map((m) => (
                                   <button
                                       key={m.id}
-                                      onClick={() => { setMode(m.id as Mode); setIsFeaturesPopoverOpen(false); }}
-                                      className={`w-full flex items-center gap-3 px-3 py-2.5 text-sm font-medium rounded-lg transition-colors ${mode === m.id ? 'bg-brand text-white shadow-md' : 'text-text-secondary hover:bg-sidebar hover:text-text-primary'}`}
+                                      onClick={() => { 
+                                          if (m.action) {
+                                              m.action();
+                                          } else {
+                                              handleNewChat(m.id as Mode);
+                                          }
+                                          setIsFeaturesPopoverOpen(false); 
+                                      }}
+                                      className={`
+                                          w-full flex items-center gap-3 px-3 py-2.5 text-sm font-medium rounded-lg transition-colors justify-start flex-shrink-0
+                                          ${mode === m.id && !m.action ? 'bg-brand text-white shadow-md' : 'text-text-secondary hover:bg-sidebar hover:text-text-primary bg-transparent'}
+                                      `}
                                   >
-                                      {m.icon}
-                                      {m.label}
+                                      <div className="flex-shrink-0">{m.icon}</div>
+                                      <span className="truncate">{m.label}</span>
                                   </button>
                               ))}
                           </div>
@@ -889,7 +1336,62 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
             </div>
         </header>
 
-        {/* Messages List */}
+        {/* Mobile Menu Portal (Bottom Sheet) */}
+        {isFeaturesPopoverOpen && createPortal(
+            <div className="fixed inset-0 z-[100] sm:hidden flex flex-col justify-end">
+                <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setIsFeaturesPopoverOpen(false)} />
+                <div className="relative bg-card border-t border-border rounded-t-3xl p-5 shadow-2xl animate-slide-in-up max-h-[75vh] overflow-y-auto">
+                   {/* Handle bar */}
+                   <div className="flex justify-center mb-6">
+                       <div className="w-12 h-1.5 bg-border/50 rounded-full"></div>
+                   </div>
+                   <h3 className="text-lg font-bold mb-4 text-center">Chọn chế độ</h3>
+                   <div className="grid grid-cols-2 gap-3 pb-8">
+                      {menuItems.map(m => (
+                          <button
+                              key={m.id}
+                              onClick={() => {
+                                  if (m.action) m.action();
+                                  else handleNewChat(m.id as Mode);
+                                  setIsFeaturesPopoverOpen(false);
+                              }}
+                              className={`flex flex-col items-center justify-center gap-2 p-4 rounded-xl border transition-all active:scale-95
+                                  ${mode === m.id && !m.action 
+                                      ? 'bg-brand/10 border-brand text-brand font-semibold' 
+                                      : 'bg-input-bg border-transparent hover:bg-sidebar text-text-secondary'}
+                              `}
+                          >
+                              <div className={`p-2 rounded-full ${mode === m.id && !m.action ? 'bg-brand text-white' : 'bg-card text-current'}`}>
+                                   {m.icon}
+                              </div>
+                              <span className="text-sm truncate w-full text-center">{m.label}</span>
+                          </button>
+                      ))}
+                   </div>
+                </div>
+            </div>,
+            document.body
+        )}
+
+        {/* Mobile Entertainment Menu */}
+        {isEntertainmentPopoverOpen && createPortal(
+            <div className="fixed inset-0 z-[100] sm:hidden flex flex-col justify-end">
+                <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setIsEntertainmentPopoverOpen(false)} />
+                <div className="relative bg-card border-t border-border rounded-t-3xl p-5 shadow-2xl animate-slide-in-up max-h-[75vh] overflow-y-auto">
+                    <div className="flex justify-center mb-6">
+                       <div className="w-12 h-1.5 bg-border/50 rounded-full"></div>
+                   </div>
+                   <h3 className="text-lg font-bold mb-4 text-center">Giải trí & Chữa lành</h3>
+                   <div className="pb-8">
+                        <React.Suspense fallback={<div className="p-4 text-center text-xs text-text-secondary">Đang tải menu...</div>}>
+                            <EntertainmentMenu onSelect={handleEntertainmentSelect} />
+                        </React.Suspense>
+                   </div>
+                </div>
+            </div>,
+            document.body
+        )}
+
         <div 
           ref={chatContainerRef} 
           className="flex-1 overflow-y-auto p-4 md:p-6 scroll-smooth"
@@ -911,43 +1413,48 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
                             handleSendMessage(prompt);
                         }}
                         onApplySchedule={(scheduleText) => {
-                            alert("Tính năng thêm lịch vào Google Calendar đang được phát triển!");
+                            // This callback is for old markdown text parsing if needed, 
+                            // but we now support structured JSON which is handled inside ChatMessage via buttons
                         }}
                         onOpenFlashcards={(cards) => setFlashcardData(cards)}
                         onOpenMindMap={(data) => setMindMapModalState({ data, messageIndex: idx })}
                         onAskSelection={(text) => handleSendMessage(`Giải thích giúp tôi đoạn này: "${text}"`)}
                         onRegenerate={idx === activeChat.messages.length - 1 && msg.role === 'model' ? () => {
-                            // Remove last model message and re-send last user message
                              const lastUserMsgIndex = activeChat.messages.length - 2;
                              if (lastUserMsgIndex >= 0) {
                                  const lastUserMsg = activeChat.messages[lastUserMsgIndex];
                                  setChatSessions(prev => prev.map(c => {
                                      if (c.id !== activeChatId) return c;
-                                     return { ...c, messages: c.messages.slice(0, -1) }; // Remove failed/old model msg
+                                     return { ...c, messages: c.messages.slice(0, -1) };
                                  }));
-                                 // Trigger re-send (need to extract raw text/files from message structure)
-                                 // Ideally refactor handleSendMessage to accept Message object, but for now:
-                                 handleSendMessage(lastUserMsg.text, []); // Files re-upload logic omitted for brevity in this quick fix
+                                 handleSendMessage(lastUserMsg.text, []);
                              }
                         } : undefined}
                         userAvatar={currentUser.avatar}
                     />
                 ))}
                 {isLoading && <TypingIndicator />}
-                <div className="h-4" /> {/* Bottom spacer */}
+                <div className="h-4" />
             </div>
         </div>
 
-        {/* Input Area */}
         <div className="flex-shrink-0 p-4 bg-background/80 backdrop-blur-sm border-t border-border z-20">
             <div className="max-w-3xl mx-auto">
                 <ChatInput 
                     onSendMessage={handleSendMessage} 
                     isLoading={isLoading}
                     placeholder={
+                        mode === 'generate_image' ? "Mô tả hình ảnh bạn muốn vẽ..." :
                         mode === 'create_exam' ? "Nhập chủ đề, số lượng câu hỏi, độ khó..." :
                         mode === 'solve_exam' ? "Chụp ảnh hoặc dán nội dung đề bài..." :
+                        mode === 'grader' ? "📸 Tải lên ảnh bài làm để chấm điểm..." :
+                        mode === 'chat_document' ? "📎 Đính kèm PDF và đặt câu hỏi..." :
+                        mode === 'data_analysis' ? "📎 Tải lên Excel/CSV để phân tích..." :
                         mode === 'create_schedule' ? "Nhập mục tiêu, thời gian rảnh, môn học..." :
+                        mode === 'rpg' ? "Nhập hành động của bạn..." :
+                        mode === 'roast' ? "Nói gì đó để bị 'khịa'..." :
+                        mode === 'akinator' ? "Trả lời (Có/Không/Không chắc)..." :
+                        mode === 'tarot' ? "Hỏi về tình yêu, sự nghiệp..." :
                         "Nhập nội dung để xử lý..."
                     }
                     onExtractText={handleExtractText}
@@ -959,6 +1466,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
                             <MoreHorizontalIcon className="w-5 h-5" />
                         </button>
                     }
+                    accept={mode === 'chat_document' ? ".pdf,.txt,.csv,.json" : mode === 'data_analysis' ? ".csv,.xlsx,.xls" : "image/*"}
                 />
                 <p className="text-xs text-center text-text-secondary mt-2 opacity-70">
                     KL AI có thể mắc lỗi. Hãy kiểm chứng thông tin quan trọng.
@@ -966,64 +1474,130 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
             </div>
         </div>
       </main>
-
-      {/* Modals */}
+      
+      {/* Lofi Player Widget - Wrapped in local Suspense to avoid crashing/flashing the whole app if lazy loaded */}
       <React.Suspense fallback={null}>
+        <LofiPlayer />
+      </React.Suspense>
+        
         {isSettingsOpen && (
-            <SettingsModal 
-                user={currentUser} 
-                onClose={() => setIsSettingsOpen(false)} 
-                onUpdateUser={handleUpdateUserInternal}
-            />
+            <React.Suspense fallback={null}>
+                <SettingsModal 
+                    user={currentUser} 
+                    onClose={() => setIsSettingsOpen(false)} 
+                    onUpdateUser={handleUpdateUserInternal}
+                />
+            </React.Suspense>
         )}
         
         {flashcardData && (
-            <FlashcardView 
-                cards={flashcardData} 
-                onClose={() => setFlashcardData(null)} 
-            />
+            <React.Suspense fallback={null}>
+                <FlashcardView 
+                    cards={flashcardData} 
+                    onClose={() => setFlashcardData(null)} 
+                />
+            </React.Suspense>
         )}
         
         {mindMapModalState && (
-            <MindMapModal
-                data={mindMapModalState.data}
-                onClose={() => setMindMapModalState(null)}
-                onCreateNewMindMap={handleCreateNewMindMap}
-                onSave={handleSaveMindMap}
-            />
+            <React.Suspense fallback={null}>
+                <MindMapModal
+                    data={mindMapModalState.data}
+                    onClose={() => setMindMapModalState(null)}
+                    onCreateNewMindMap={handleCreateNewMindMap}
+                    onSave={handleSaveMindMap}
+                />
+            </React.Suspense>
         )}
 
         {isCalculatorOpen && (
-            <ToolModal title="Máy tính khoa học" onClose={() => setIsCalculatorOpen(false)}>
-                <Calculator />
-            </ToolModal>
+             <React.Suspense fallback={null}>
+                <ToolModal title="Máy tính khoa học" onClose={() => setIsCalculatorOpen(false)}>
+                    <Calculator />
+                </ToolModal>
+             </React.Suspense>
         )}
 
         {isPeriodicTableOpen && (
-            <ToolModal title="Bảng tuần hoàn" onClose={() => setIsPeriodicTableOpen(false)} initialSize={{width: 800, height: 500}}>
-                <PeriodicTable />
-            </ToolModal>
+             <React.Suspense fallback={null}>
+                <ToolModal title="Bảng tuần hoàn" onClose={() => setIsPeriodicTableOpen(false)} initialSize={{width: 800, height: 500}}>
+                    <PeriodicTable />
+                </ToolModal>
+             </React.Suspense>
         )}
         
+        {isWhiteboardOpen && (
+             <React.Suspense fallback={null}>
+                <ToolModal title="Bảng trắng tương tác" onClose={() => setIsWhiteboardOpen(false)} initialSize={{width: 800, height: 600}}>
+                    <Whiteboard onCapture={handleWhiteboardCapture} />
+                </ToolModal>
+             </React.Suspense>
+        )}
+
+        {isPomodoroOpen && (
+             <React.Suspense fallback={null}>
+                <PomodoroTimer onClose={() => setIsPomodoroOpen(false)} />
+             </React.Suspense>
+        )}
+
+        {isUnitConverterOpen && (
+             <React.Suspense fallback={null}>
+                <ToolModal title="Chuyển đổi đơn vị" onClose={() => setIsUnitConverterOpen(false)} initialSize={{width: 400, height: 500}}>
+                    <UnitConverter />
+                </ToolModal>
+             </React.Suspense>
+        )}
+
+        {isProbabilitySimOpen && (
+             <React.Suspense fallback={null}>
+                <ToolModal title="Mô phỏng xác suất" onClose={() => setIsProbabilitySimOpen(false)} initialSize={{width: 400, height: 500}}>
+                    <ProbabilitySim />
+                </ToolModal>
+             </React.Suspense>
+        )}
+
+        {isFormulaNotebookOpen && (
+             <React.Suspense fallback={null}>
+                <ToolModal title="Sổ tay công thức" onClose={() => setIsFormulaNotebookOpen(false)} initialSize={{width: 500, height: 600}}>
+                    <FormulaNotebook />
+                </ToolModal>
+             </React.Suspense>
+        )}
+        
+        {isBreathingOpen && (
+             <React.Suspense fallback={null}>
+                <BreathingExercise onClose={() => setIsBreathingOpen(false)} />
+             </React.Suspense>
+        )}
+
+        {isTarotOpen && (
+             <React.Suspense fallback={null}>
+                <TarotReader 
+                    onClose={() => setIsTarotOpen(false)} 
+                    onReadingRequest={handleTarotReading} 
+                />
+             </React.Suspense>
+        )}
+
         {/* Demo Limit Modal */}
         {showDemoLimitModal && (
             <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
                 <div className="bg-card rounded-2xl shadow-2xl max-w-md w-full p-6 border border-border animate-message-pop-in">
                     <div className="flex justify-center mb-4">
-                         <div className="w-16 h-16 bg-brand/10 rounded-full flex items-center justify-center">
-                            <KeyIcon className="w-8 h-8 text-brand" />
+                         <div className="w-16 h-16 bg-red-500/10 rounded-full flex items-center justify-center">
+                            <LockIcon className="w-8 h-8 text-red-500" />
                          </div>
                     </div>
-                    <h2 className="text-xl font-bold text-center mb-2">Hết lượt dùng thử miễn phí</h2>
-                    <p className="text-center text-text-secondary mb-6">
-                        Bạn đã sử dụng hết {DEMO_MESSAGE_LIMIT} tin nhắn miễn phí trong chế độ Khách. <br/>
+                    <h2 className="text-xl font-bold text-center mb-2">Hết lượt dùng thử</h2>
+                    <p className="text-center text-text-secondary mb-6 text-sm">
+                        Bạn đã sử dụng hết <b>{DEMO_MESSAGE_LIMIT}</b> tin nhắn miễn phí. <br/>
                         Vui lòng đăng ký tài khoản để tiếp tục sử dụng không giới hạn và lưu lại lịch sử.
                     </p>
                     <div className="flex flex-col gap-3">
                          <button 
                             onClick={() => {
                                 setShowDemoLimitModal(false);
-                                onLogout(); // Go back to auth screen
+                                onLogout(); 
                             }}
                             className="w-full py-3 bg-brand hover:bg-brand/90 text-white font-bold rounded-xl shadow-lg transition-transform active:scale-95"
                          >
@@ -1039,7 +1613,40 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
                 </div>
             </div>
         )}
-      </React.Suspense>
+
+        {/* Login Prompt Modal (Settings Access) */}
+        {showLoginPromptModal && (
+            <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+                <div className="bg-card rounded-2xl shadow-2xl max-w-md w-full p-6 border border-border animate-message-pop-in">
+                    <div className="flex justify-center mb-4">
+                         <div className="w-16 h-16 bg-brand/10 rounded-full flex items-center justify-center">
+                            <SettingsIcon className="w-8 h-8 text-brand" />
+                         </div>
+                    </div>
+                    <h2 className="text-xl font-bold text-center mb-2">Tính năng nâng cao</h2>
+                    <p className="text-center text-text-secondary mb-6 text-sm">
+                        Cài đặt cá nhân hóa, lưu trữ lịch sử và đồng bộ đám mây chỉ dành cho thành viên chính thức.
+                    </p>
+                    <div className="flex flex-col gap-3">
+                         <button 
+                            onClick={() => {
+                                setShowLoginPromptModal(false);
+                                onLogout(); 
+                            }}
+                            className="w-full py-3 bg-brand hover:bg-brand/90 text-white font-bold rounded-xl shadow-lg transition-transform active:scale-95"
+                         >
+                             Đăng nhập / Đăng ký
+                         </button>
+                         <button 
+                            onClick={() => setShowLoginPromptModal(false)}
+                            className="w-full py-3 bg-sidebar hover:bg-card-hover text-text-primary font-semibold rounded-xl transition-colors"
+                         >
+                             Đóng
+                         </button>
+                    </div>
+                </div>
+            </div>
+        )}
     </div>
   );
 };

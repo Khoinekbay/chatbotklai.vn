@@ -1,4 +1,6 @@
 
+
+
 import React, { useState, useRef, useEffect } from 'react';
 import { SendIcon, AttachmentIcon, XIcon, MicrophoneIcon, FileIcon, ScanIcon } from './Icons';
 
@@ -8,6 +10,7 @@ interface ChatInputProps {
   placeholder: string;
   featuresButton?: React.ReactNode;
   onExtractText?: (file: { data: string; mimeType: string }) => Promise<string | null>;
+  accept?: string;
 }
 
 // Let TypeScript know about the experimental SpeechRecognition API
@@ -18,7 +21,7 @@ declare global {
     }
 }
 
-const ChatInput: React.FC<ChatInputProps> = ({ onSendMessage, isLoading, placeholder, featuresButton, onExtractText }) => {
+const ChatInput: React.FC<ChatInputProps> = ({ onSendMessage, isLoading, placeholder, featuresButton, onExtractText, accept }) => {
   const [text, setText] = useState('');
   const [files, setFiles] = useState<File[]>([]);
   const [imagePreviewUrls, setImagePreviewUrls] = useState<string[]>([]);
@@ -207,8 +210,9 @@ const ChatInput: React.FC<ChatInputProps> = ({ onSendMessage, isLoading, placeho
           {files.map((file, index) => (
             <div key={index} className="relative flex-shrink-0 group w-16 h-16">
               {imagePreviewUrls[index] === 'file_icon' ? (
-                  <div className="w-full h-full bg-card rounded-lg border border-border flex items-center justify-center">
-                      <FileIcon className="w-8 h-8 text-text-secondary" />
+                  <div className="w-full h-full bg-card rounded-lg border border-border flex items-center justify-center flex-col p-1">
+                      <FileIcon className="w-6 h-6 text-text-secondary mb-1" />
+                      <span className="text-[9px] text-text-secondary w-full truncate text-center">{file.name.split('.').pop()}</span>
                   </div>
               ) : (
                   <div className="w-full h-full relative">
@@ -270,6 +274,7 @@ const ChatInput: React.FC<ChatInputProps> = ({ onSendMessage, isLoading, placeho
             ref={fileInputRef}
             onChange={handleFileChange} 
             className="hidden" 
+            accept={accept}
           />
           <button 
             onClick={() => fileInputRef.current?.click()}

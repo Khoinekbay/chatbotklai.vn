@@ -1,7 +1,9 @@
 
-import React, { useState, useRef } from 'react';
+
+import React, { useState, useRef, useEffect } from 'react';
 import { type User } from '../types';
 import { XIcon, SunIcon, MoonIcon, SettingsIcon, UserIcon, KeyIcon } from './Icons';
+import { api } from '../utils/api';
 
 interface SettingsModalProps {
   user: User;
@@ -41,12 +43,32 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ user, onClose, onUpdateUs
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [isPasswordLoading, setIsPasswordLoading] = useState(false);
+  const [instructionInput, setInstructionInput] = useState(user.customInstruction || '');
+  const [cloudStatus, setCloudStatus] = useState<'checking' | 'connected' | 'error'>('checking');
   
   const bgFileInputRef = useRef<HTMLInputElement>(null);
   const avatarFileInputRef = useRef<HTMLInputElement>(null);
 
+  useEffect(() => {
+      setInstructionInput(user.customInstruction || '');
+  }, [user.customInstruction]);
+
+  useEffect(() => {
+      if (activeTab === 'account') {
+          api.checkConnection().then(isConnected => {
+              setCloudStatus(isConnected ? 'connected' : 'error');
+          });
+      }
+  }, [activeTab]);
+
   const handleUpdate = (updates: Partial<User>) => {
     onUpdateUser(updates);
+  };
+
+  const handleInstructionBlur = () => {
+      if (instructionInput !== user.customInstruction) {
+          handleUpdate({ customInstruction: instructionInput });
+      }
   };
   
   const handleBgFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -67,7 +89,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ user, onClose, onUpdateUs
   const handleAvatarFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file && file.type.startsWith('image/')) {
-        // Simple size check (limit to ~2MB to avoid localStorage issues)
         if (file.size > 2 * 1024 * 1024) {
             alert("Vui lòng chọn ảnh nhỏ hơn 2MB");
             return;
@@ -103,7 +124,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ user, onClose, onUpdateUs
       setError('Mật khẩu mới không khớp.'); return;
     }
     
-    // Verify current password (simple check since we have user data)
     if (user.password && currentPassword !== user.password) {
         setError('Mật khẩu hiện tại không đúng.');
         return;
@@ -111,9 +131,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ user, onClose, onUpdateUs
 
     setIsPasswordLoading(true);
     try {
-        // Actually call the update function to save the new password
         await onUpdateUser({ password: newPassword });
-        
         setSuccessMessage('Đổi mật khẩu thành công!');
         setCurrentPassword('');
         setNewPassword('');
@@ -225,14 +243,66 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ user, onClose, onUpdateUs
                     {TONES.map(p => ( <button key={p.value} onClick={() => handleUpdate({ aiTone: p.value })} className={`px-4 py-2.5 text-sm rounded-lg transition-colors duration-200 border border-transparent ${ (user.aiTone || DEFAULT_TONE) === p.value ? 'bg-brand text-white font-semibold shadow-md' : 'bg-input-bg hover:bg-border border-border' }`} > {p.name} </button> ))}
                 </div>
             </SettingItem>
+            <SettingItem title="Hướng dẫn tùy chỉnh" description="Nhập các hướng dẫn cụ thể mà bạn muốn AI tuân thủ tuyệt đối (tối đa 2000 từ). AI sẽ ưu tiên hướng dẫn này cao nhất.">
+                <div className="relative">
+                    <textarea
+                        value={instructionInput}
+                        onChange={(e) => {
+                            if (e.target.value.length <= 10000) {
+                                setInstructionInput(e.target.value);
+                            }
+                        }}
+                        onBlur={handleInstructionBlur}
+                        className="w-full h-40 bg-input-bg border border-border rounded-lg p-3 text-sm text-text-primary placeholder-text-secondary focus:ring-2 focus:ring-brand focus:outline-none resize-y"
+                        placeholder="Ví dụ: Luôn xưng hô là 'thầy/trò', giải thích chi tiết từng bước, không sử dụng emoji, luôn cung cấp ví dụ thực tế..."
+                    />
+                    <div className={`absolute bottom-2 right-3 text-xs font-medium bg-card/80 px-2 py-0.5 rounded ${instructionInput.length >= 9900 ? 'text-red-500' : 'text-text-secondary'}`}>
+                        {instructionInput.length}/10000 ký tự
+                    </div>
+                </div>
+            </SettingItem>
           </div>
         );
       case 'account':
         return (
             <div>
+              <SettingItem title="Trạng thái đám mây">
+                <div className={`flex items-center gap-3 p-3 rounded-lg border ${cloudStatus === 'connected' ? 'bg-green-500/10 border-green-500/30 text-green-600 dark:text-green-400' : cloudStatus === 'error' ? 'bg-red-500/10 border-red-500/30 text-red-600 dark:text-red-400' : 'bg-input-bg border-border'}`}>
+                    <div className={`relative flex-shrink-0 w-3 h-3 rounded-full ${cloudStatus === 'connected' ? 'bg-green-500' : cloudStatus === 'error' ? 'bg-red-500' : 'bg-yellow-500'}`}>
+                         {cloudStatus === 'checking' && <div className="absolute inset-0 bg-yellow-500 rounded-full animate-ping opacity-75"></div>}
+                    </div>
+                    <span className="text-sm font-medium">
+                        {cloudStatus === 'connected' ? 'Đã kết nối với Supabase' : cloudStatus === 'error' ? 'Không thể kết nối (Đang chạy chế độ Offline)' : 'Đang kiểm tra kết nối...'}
+                    </span>
+                </div>
+                {cloudStatus === 'error' && (
+                     <p className="text-xs text-red-500 mt-2 pl-1 leading-5">
+                         <b>Lỗi kết nối! Vui lòng kiểm tra:</b> <br/>
+                         1. API Key (phải bắt đầu bằng "eyJ...", không phải "sb_publishable") <br/>
+                         2. Đã tắt "Confirm Email" trong Supabase chưa? (Auth -> Providers -> Email)<br/>
+                         3. Đã chạy lệnh SQL tạo bảng chưa?
+                     </p>
+                )}
+              </SettingItem>
               <SettingItem title="Tên đăng nhập">
                 <input type="text" value={user.username} disabled className="w-full bg-input-bg border border-border rounded-lg p-3 text-text-secondary placeholder-text-secondary cursor-not-allowed" />
               </SettingItem>
+              
+              {/* Real Email Display */}
+              <SettingItem title="Email liên hệ (Thực)">
+                 {user.email ? (
+                    <div className="space-y-2">
+                        <input type="text" value={user.email} disabled className="w-full bg-input-bg border border-border rounded-lg p-3 text-text-secondary placeholder-text-secondary cursor-not-allowed" />
+                        <p className="text-xs text-green-600 dark:text-green-400">Email này được lưu trong hệ thống để hỗ trợ khôi phục tài khoản.</p>
+                    </div>
+                 ) : (
+                    <div className="space-y-2">
+                        <input type="text" value="Chưa cập nhật" disabled className="w-full bg-input-bg border border-border rounded-lg p-3 text-text-secondary placeholder-text-secondary cursor-not-allowed italic" />
+                        <p className="text-xs text-text-secondary">Bạn chưa thêm email. Hãy liên hệ admin nếu cần hỗ trợ tài khoản.</p>
+                    </div>
+                 )}
+              </SettingItem>
+
               <SettingItem title="Đổi mật khẩu">
                 {error && <p className="bg-red-500/10 text-red-500 text-sm text-center p-3 rounded-lg mb-4">{error}</p>}
                 {successMessage && <p className="bg-green-500/10 text-green-600 text-sm text-center p-3 rounded-lg mb-4">{successMessage}</p>}
