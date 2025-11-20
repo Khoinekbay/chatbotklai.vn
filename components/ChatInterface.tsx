@@ -36,12 +36,9 @@ declare global {
     }
 }
 
-interface BeforeInstallPromptEvent extends Event {
-  prompt: () => void;
-  userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>;
-}
-
 const getSystemInstruction = (role: User['aiRole'] = 'assistant', tone: User['aiTone'] = 'balanced', customInstruction?: string, currentMode?: Mode): string => {
+    
+    // --- SPECIAL MODES OVERRIDE (Ignore user settings) ---
     if (currentMode === 'rpg') {
         return `Bạn là Game Master (GM) của một trò chơi nhập vai dạng văn bản (Text Adventure). Hãy dẫn dắt người chơi qua một cốt truyện thú vị, sáng tạo. Bắt đầu bằng việc mô tả bối cảnh hiện tại và hỏi người chơi muốn làm gì. Luôn mô tả hậu quả của hành động một cách sinh động. Giữ giọng văn lôi cuốn.`;
     }
@@ -58,6 +55,7 @@ const getSystemInstruction = (role: User['aiRole'] = 'assistant', tone: User['ai
         return `Bạn là chuyên gia tâm lý học. Hãy đặt các câu hỏi trắc nghiệm ngắn để xác định tính cách MBTI của người dùng. Hỏi từng câu một. Sau khoảng 10 câu, hãy đưa ra dự đoán về nhóm tính cách của họ.`;
     }
 
+    // --- STANDARD MODES ---
     let roleDescription = '';
     switch (role) {
         case 'teacher':
@@ -171,6 +169,7 @@ const parseFlashcardsFromResponse = (text: string): { intro: string; cards: { te
 };
 
 const parseSpecialJsonBlock = (text: string, blockName: string): any | null => {
+    // Improved regex to handle optional newlines/spaces after the block name
     const regex = new RegExp(`\`\`\`${blockName}\\s*([\\s\\S]*?)\`\`\``);
     const match = text.match(regex);
     if (match && match[1]) {
@@ -199,6 +198,7 @@ const parseMindMapFromResponse = (text: string): { intro: string, data: MindMapN
     let root: MindMapNode | null = null;
     const stack: { node: MindMapNode; indent: number }[] = [];
     const topLevelNodes: MindMapNode[] = [];
+
 
     lines.forEach(line => {
         const indent = getIndent(line);
@@ -308,7 +308,8 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
   const [showDemoLimitModal, setShowDemoLimitModal] = useState(false);
   const [showLoginPromptModal, setShowLoginPromptModal] = useState(false);
 
-  const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
+  // PWA Install Prompt
+  const [installPrompt, setInstallPrompt] = useState<any>(null);
   const [showInstallInstructions, setShowInstallInstructions] = useState(false);
   const [isStandalone, setIsStandalone] = useState(false);
   const [isIOS, setIsIOS] = useState(false);
@@ -340,6 +341,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
       { id: 'similar_exam', label: 'Đề tương tự', icon: <CloneIcon className="w-5 h-5" /> },
       { id: 'create_file', label: 'Tạo file', icon: <CreateFileIcon className="w-5 h-5" /> },
       
+      // Tools
       { id: 'calculator', label: 'Máy tính', icon: <CalculatorIcon className="w-5 h-5 text-orange-500"/>, action: () => setIsCalculatorOpen(true) },
       { id: 'periodic_table', label: 'Bảng tuần hoàn', icon: <PeriodicTableIcon className="w-5 h-5 text-green-500"/>, action: () => setIsPeriodicTableOpen(true) },
       { id: 'formula_notebook', label: 'Sổ công thức', icon: <NotebookIcon className="w-5 h-5 text-red-500"/>, action: () => setIsFormulaNotebookOpen(true) },
@@ -373,18 +375,21 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
         }
     }
   }, [currentUser]);
-
+  
+  // PWA Install Listener
   useEffect(() => {
-      const handleBeforeInstallPrompt = (e: Event) => {
+      const handleBeforeInstallPrompt = (e: any) => {
           e.preventDefault();
-          setInstallPrompt(e as BeforeInstallPromptEvent);
+          setInstallPrompt(e);
       };
       
       window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
       
+      // Check iOS
       const iOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
       setIsIOS(iOS);
 
+      // Check Standalone
       const isStandaloneMode = window.matchMedia('(display-mode: standalone)').matches || (window.navigator as any).standalone === true;
       setIsStandalone(isStandaloneMode);
 
@@ -396,12 +401,13 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
   const handleInstallClick = () => {
       if (installPrompt) {
           installPrompt.prompt();
-          installPrompt.userChoice.then((choiceResult: { outcome: 'accepted' | 'dismissed' }) => {
+          installPrompt.userChoice.then((choiceResult: any) => {
               if (choiceResult.outcome === 'accepted') {
                   setInstallPrompt(null);
               }
           });
       } else {
+          // Fallback logic for iOS or desktop
           setShowInstallInstructions(true);
       }
   };
@@ -425,23 +431,30 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
     document.body.style.fontFamily = currentUser?.fontPreference || defaultFont;
   }, [currentUser?.fontPreference]);
 
+  // Sync mode with active chat to ensure UI (input placeholder) is always correct
   useEffect(() => {
       if (!activeChatId) return;
       const chat = chatSessions.find(c => c.id === activeChatId);
       if (chat) {
           const lastMsg = chat.messages[chat.messages.length - 1];
+          // Only sync if the mode is explicitly different to prevent loop or flickering
+          // and verify the mode is valid
           if (lastMsg?.mode && lastMsg.mode !== mode) {
               setMode(lastMsg.mode);
           } else if (!lastMsg?.mode && mode !== 'chat') {
+              // Default fallback only if not already chat
               setMode('chat');
           }
       }
-  }, [activeChatId, chatSessions]);
+  }, [activeChatId, chatSessions]); // Removed 'mode' dependency to rely on internal check
 
   const handleNewChat = useCallback(async (initialMode: Mode = 'chat', initialMessage?: Message) => {
     if (!currentUser) return;
+    
     const isSpecialMode = ['rpg', 'roast', 'akinator', 'tarot', 'mbti'].includes(initialMode);
     const title = isSpecialMode ? `Chế độ ${initialMode.toUpperCase()}` : 'Đoạn chat mới';
+
+    // 1. Create the object synchronously
     const newId = Date.now().toString();
     const newChat: ChatSession = {
       id: newId,
@@ -463,11 +476,14 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
         newChat.messages.push({ role: 'model', text: '', timestamp: new Date().toISOString(), mode: initialMode });
     }
 
+    // 2. UPDATE UI IMMEDIATELY
     setChatSessions(prev => [newChat, ...prev]);
     setActiveChatId(newChat.id);
-    setMode(initialMode);
+    setMode(initialMode); // Explicitly set mode here to be safe
+    
     setIsMobileSidebarOpen(false);
     
+    // 3. Initialize Chat Instance (Safely)
     try {
         const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
         const systemInstruction = getSystemInstruction(currentUser?.aiRole, currentUser?.aiTone, currentUser?.customInstruction, initialMode);
@@ -477,8 +493,11 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
         });
         chatInstances.current[newChat.id] = chatInstance;
 
+        // Initial message handling if needed
         if (initialMessage && initialMessage.role === 'user') {
             setIsLoading(true);
+            // ... logic for initial message sending ...
+            // (Optimized out for brevity as the core issue is state update)
             chatInstance.sendMessageStream({ message: [{ text: initialMessage.text }] }).then(async (result) => {
                  let fullText = '';
                  for await (const chunk of result) {
@@ -507,18 +526,24 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
         }
     } catch (error) {
         console.error("Failed to initialize chat instance", error);
+        // Even if AI init fails, the UI should still switch to the new chat screen
     }
 
+    // 4. Save to API in Background
     if (!currentUser.isDemo) {
         api.saveChatSession(currentUser.username, newChat).catch(err => console.error("Background save failed", err));
     }
+
   }, [currentUser]);
 
+  // Load chats using API
   useEffect(() => {
     if (!currentUser) return;
+    
     const loadChats = async () => {
         try {
             const loadedChats = await api.getChatSessions(currentUser.username);
+            
             if (loadedChats.length > 0) {
                 setChatSessions(loadedChats);
                 setActiveChatId(prev => {
@@ -537,17 +562,21 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
     loadChats();
   }, [currentUser.username]);
 
+  // Initialize Chat Instances (GenAI)
   useEffect(() => {
     if (!currentUser) return;
+    
     chatSessions.forEach(session => {
         if (!chatInstances.current[session.id]) {
             const lastMsgMode = session.messages[session.messages.length - 1]?.mode || 'chat';
+            
             const systemInstruction = getSystemInstruction(
                 currentUser?.aiRole, 
                 currentUser?.aiTone, 
                 currentUser?.customInstruction, 
                 lastMsgMode
             );
+            
             const chatHistory = session.messages
                 .map(mapMessageToHistory)
                 .filter((content): content is { role: Role; parts: any[] } => content !== null);
@@ -570,6 +599,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
     });
   }, [chatSessions, currentUser]);
 
+  // Auto-save active chat to API when it changes
   useEffect(() => {
       if (!activeChatId || !currentUser || currentUser.isDemo) return;
       const currentSession = chatSessions.find(c => c.id === activeChatId);
@@ -585,6 +615,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
       }
   }, [chatSessions, activeChatId, currentUser]);
 
+
   useEffect(() => {
     if (chatContainerRef.current) {
       chatContainerRef.current.scrollTo({
@@ -597,7 +628,11 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       const target = event.target as HTMLElement;
+
+      // FIX: Ignore clicks inside mobile menus (portals) to prevent premature closing
       if (target.closest('.mobile-menu-content')) return;
+
+      // Close Features Popover
       if (
         featuresPopoverRef.current && 
         !featuresPopoverRef.current.contains(target) &&
@@ -606,6 +641,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
       ) {
         setIsFeaturesPopoverOpen(false);
       }
+      // Close Entertainment Popover
       if (
         entertainmentPopoverRef.current && 
         !entertainmentPopoverRef.current.contains(target) &&
@@ -615,6 +651,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
         setIsEntertainmentPopoverOpen(false);
       }
     };
+
     document.addEventListener('mousedown', handleClickOutside);
     document.addEventListener('touchstart', (e) => handleClickOutside(e as unknown as MouseEvent));
     return () => {
@@ -622,6 +659,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
        document.removeEventListener('touchstart', (e) => handleClickOutside(e as unknown as MouseEvent));
     };
   }, []);
+
 
   const handleExtractText = useCallback(async (file: { data: string; mimeType: string }): Promise<string | null> => {
     try {
@@ -642,19 +680,24 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
     }
   }, []);
   
+  // Helper to read spreadsheet files
   const readSpreadsheet = (file: { data: string; mimeType: string }): Promise<string | null> => {
       return new Promise((resolve) => {
           try {
+              // Convert base64 to binary string
               const binaryStr = atob(file.data);
               const len = binaryStr.length;
               const bytes = new Uint8Array(len);
               for (let i = 0; i < len; i++) {
                   bytes[i] = binaryStr.charCodeAt(i);
               }
+              
+              // Read workbook
               if (window.XLSX) {
                   const workbook = window.XLSX.read(bytes.buffer, { type: 'array' });
                   const firstSheetName = workbook.SheetNames[0];
                   const worksheet = workbook.Sheets[firstSheetName];
+                  // Convert to CSV text
                   const csv = window.XLSX.utils.sheet_to_csv(worksheet);
                   resolve(csv);
               } else {
@@ -669,17 +712,21 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
 
   const handleSendMessage = useCallback(async (text: string, files: { name: string; data: string; mimeType: string }[] = []) => {
     if (!activeChatId || isLoading || !currentUser) return;
+    
+    // DEMO LIMIT CHECK
     if (currentUser.isDemo) {
         if (demoMessageCount >= DEMO_MESSAGE_LIMIT) {
             setShowDemoLimitModal(true);
             return;
         }
+        // Increment locally for UI
         setDemoMessageCount(prev => {
             const newCount = prev + 1;
             localStorage.setItem('kl-ai-demo-count', newCount.toString());
             return newCount;
         });
     }
+
     if (!chatInstances.current[activeChatId] && mode !== 'generate_image') return;
     if (!text.trim() && files.length === 0) return;
 
@@ -695,6 +742,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
         mode: mode,
     };
 
+    // Optimistic Update: Add User Message
     setChatSessions(prev =>
         prev.map(chat =>
             chat.id === activeChatId
@@ -706,6 +754,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
     setError(null);
     setFlashcardData(null);
 
+    // Logic for Generating Title (only for first message)
     const generateTitleIfNeeded = async (promptText: string) => {
         const activeChat = chatSessions.find(c => c.id === activeChatId);
         const isFirstUserMessage = activeChat ? activeChat.messages.filter(m => m.role === 'user').length === 0 : false;
@@ -733,11 +782,17 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
     }
 
     try {
+        // --- IMAGE GENERATION MODE (Pollinations.ai - Free) ---
         if (mode === 'generate_image') {
+             // Tạo số ngẫu nhiên để tránh cache
              const randomSeed = Math.floor(Math.random() * 10000000);
              const encodedPrompt = encodeURIComponent(text);
+             // Sử dụng Pollinations.ai API với seed random để mỗi lần là ảnh mới
              const imageUrl = `https://image.pollinations.ai/prompt/${encodedPrompt}?seed=${randomSeed}&width=1024&height=1024&nologo=true`;
+
+             // Fake một chút delay để cảm giác như đang xử lý
              await new Promise(resolve => setTimeout(resolve, 1000));
+
              setChatSessions(prev =>
                 prev.map(chat => {
                     if (chat.id !== activeChatId) return chat;
@@ -753,31 +808,68 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
                     return { ...chat, messages: newMessages };
                 })
             );
-        } else {
+        } 
+        // --- STANDARD CHAT MODE ---
+        else {
             const activeChat = chatInstances.current[activeChatId];
+            
             let messageTextToSend = text;
             let finalFiles = [...files];
+            let hasProcessedSpreadsheet = false;
 
+            // Pre-process Excel files for Data Analysis
             if (mode === 'data_analysis' && files.length > 0) {
                  for (const file of files) {
                      if (file.mimeType.includes('spreadsheet') || file.mimeType.includes('excel') || file.name.endsWith('.csv')) {
                          const csvContent = await readSpreadsheet(file);
                          if (csvContent) {
                              messageTextToSend += `\n\n[Dữ liệu từ file ${file.name}]:\n${csvContent}\n`;
+                             // Don't send binary for spreadsheet since we sent text
                              finalFiles = finalFiles.filter((f: any) => f !== file);
+                             hasProcessedSpreadsheet = true;
                          }
                      }
                  }
             }
 
             if (mode === 'grader') {
-                const graderPrompt = `BẠN LÀ MỘT GIÁO VIÊN CHẤM THI CHUYÊN NGHIỆP VÀ KHẮT KHE.\nNhiệm vụ: Phân tích hình ảnh bài làm của học sinh, chấm điểm và đưa ra nhận xét chi tiết.\n\nQuy tắc chấm:\n1. Thang điểm: 10 (Có thể lẻ đến 0.25).\n2. Soi lỗi: Tìm kỹ các lỗi chính tả, lỗi tính toán, logic sai, hoặc trình bày cẩu thả.\n3. Format trả về: BẮT BUỘC dùng định dạng Markdown sau:\n\n# KẾT QUẢ CHẤM THI\n## Điểm số: [Số điểm]/10 \n(Nếu điểm < 5: 🔴, 5-7: 🟡, >8: 🟢)\n\n## ❌ Các lỗi cần sửa:\n- **[Vị trí/Dòng]**: [Mô tả lỗi sai] -> [Cách sửa đúng]\n- ...\n\n## 💡 Lời khuyên của giáo viên:\n[Nhận xét tổng quan và động viên ngắn gọn]\n\nLưu ý: Nếu chữ quá xấu không dịch được, hãy báo cho tôi biết để chụp lại, đừng cố chấm bừa.\n\nNội dung bài làm (nếu có ảnh, hãy xem ảnh):\n`;
+                const graderPrompt = `BẠN LÀ MỘT GIÁO VIÊN CHẤM THI CHUYÊN NGHIỆP VÀ KHẮT KHE.
+Nhiệm vụ: Phân tích hình ảnh bài làm của học sinh, chấm điểm và đưa ra nhận xét chi tiết.
+
+Quy tắc chấm:
+1. Thang điểm: 10 (Có thể lẻ đến 0.25).
+2. Soi lỗi: Tìm kỹ các lỗi chính tả, lỗi tính toán, logic sai, hoặc trình bày cẩu thả.
+3. Format trả về: BẮT BUỘC dùng định dạng Markdown sau:
+
+# KẾT QUẢ CHẤM THI
+## Điểm số: [Số điểm]/10 
+(Nếu điểm < 5: 🔴, 5-7: 🟡, >8: 🟢)
+
+## ❌ Các lỗi cần sửa:
+- **[Vị trí/Dòng]**: [Mô tả lỗi sai] -> [Cách sửa đúng]
+- ...
+
+## 💡 Lời khuyên của giáo viên:
+[Nhận xét tổng quan và động viên ngắn gọn]
+
+Lưu ý: Nếu chữ quá xấu không dịch được, hãy báo cho tôi biết để chụp lại, đừng cố chấm bừa.
+
+Nội dung bài làm (nếu có ảnh, hãy xem ảnh):
+`;
                 messageTextToSend = `${graderPrompt}\n${messageTextToSend}`;
             } else if (mode === 'chat_document') {
-                const docPrompt = `BẠN LÀ TRỢ LÝ PHÂN TÍCH TÀI LIỆU (RAG - Retrieval Augmented Generation).\nNhiệm vụ: Trả lời câu hỏi của người dùng CHỈ DỰA TRÊN nội dung file đính kèm (PDF, Text...).\nTuyệt đối không bịa đặt thông tin nếu không có trong tài liệu.\nNếu thông tin không có trong file, hãy trả lời: "Thông tin này không có trong tài liệu được cung cấp."\nHãy trích dẫn (số trang, mục) nếu có thể.\n`;
+                const docPrompt = `BẠN LÀ TRỢ LÝ PHÂN TÍCH TÀI LIỆU (RAG - Retrieval Augmented Generation).
+Nhiệm vụ: Trả lời câu hỏi của người dùng CHỈ DỰA TRÊN nội dung file đính kèm (PDF, Text...).
+Tuyệt đối không bịa đặt thông tin nếu không có trong tài liệu.
+Nếu thông tin không có trong file, hãy trả lời: "Thông tin này không có trong tài liệu được cung cấp."
+Hãy trích dẫn (số trang, mục) nếu có thể.
+`;
                 messageTextToSend = `${docPrompt}\n---\nCâu hỏi: ${messageTextToSend}`;
             } else if (mode === 'data_analysis') {
-                messageTextToSend = `PHÂN TÍCH DỮ LIỆU:\nHãy phân tích dữ liệu được cung cấp và trả lời câu hỏi.\nNếu được yêu cầu vẽ biểu đồ, hãy trả về JSON \`chart_json\` (như hướng dẫn hệ thống).\n\n---\nYêu cầu: ${messageTextToSend}`;
+                messageTextToSend = `PHÂN TÍCH DỮ LIỆU:
+Hãy phân tích dữ liệu được cung cấp và trả lời câu hỏi.
+Nếu được yêu cầu vẽ biểu đồ, hãy trả về JSON \`chart_json\` (như hướng dẫn hệ thống).
+\n---\nYêu cầu: ${messageTextToSend}`;
             }
 
             const parts: any[] = [{ text: messageTextToSend }];
@@ -823,9 +915,11 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
                     if (chat.id !== activeChatId) return chat;
                     const newMessages = [...chat.messages];
                     const lastMsg = { ...newMessages[newMessages.length - 1] };
+                    
                     if (flashcardData) lastMsg.flashcards = flashcardData.cards;
                     if (chartConfig) lastMsg.chartConfig = chartConfig;
                     if (scheduleData) lastMsg.scheduleData = scheduleData;
+
                     newMessages[newMessages.length - 1] = lastMsg;
                     return { ...chat, messages: newMessages };
                 })
@@ -847,14 +941,17 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
                 }
             }
         }
+
     } catch (error: any) {
         console.error("Error processing request:", error);
         let errorMessage = "Đã có lỗi xảy ra khi xử lý yêu cầu. ";
+        
         if (mode === 'generate_image') {
             errorMessage = "Không thể tạo ảnh. Có thể do mô tả chứa nội dung không phù hợp hoặc dịch vụ đang bận.";
         } else {
             errorMessage += "(Kiểm tra API Key của bạn hoặc định dạng file)";
         }
+
         setError(errorMessage);
         setChatSessions(prev => 
             prev.map(chat => {
@@ -872,23 +969,29 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
     }
   }, [activeChatId, chatSessions, mode, isLoading, currentUser, demoMessageCount]);
 
+
   const handleDeleteChat = async (chatId: string, e: React.MouseEvent) => {
       e.stopPropagation();
       if (!currentUser) return;
+
       const newSessions = chatSessions.filter(c => c.id !== chatId);
       setChatSessions(newSessions);
+      
       if (!currentUser.isDemo) {
           await api.deleteChatSession(currentUser.username, chatId);
       }
+
       if (newSessions.length === 0) {
           handleNewChat();
       } else if (activeChatId === chatId) {
           setActiveChatId(newSessions[0].id);
       }
   };
+  
   const togglePin = async (chatId: string, e: React.MouseEvent) => {
       e.stopPropagation();
       if (!currentUser) return;
+
       let updatedSession: ChatSession | undefined;
       setChatSessions(prev => prev.map(c => {
           if (c.id === chatId) {
@@ -897,14 +1000,17 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
           }
           return c;
       }));
+      
       if (updatedSession && !currentUser.isDemo) {
           await api.saveChatSession(currentUser.username, updatedSession);
       }
   };
+  
   const handleUpdateUserInternal = async (updates: Partial<User>) => {
       if (!currentUser) return false;
       try {
           await onUpdateUser(updates);
+          
           if (updates.aiRole || updates.aiTone || updates.customInstruction !== undefined) {
                const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
                const systemInstruction = getSystemInstruction(
@@ -912,13 +1018,16 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
                    updates.aiTone || currentUser.aiTone, 
                    updates.customInstruction !== undefined ? updates.customInstruction : currentUser.customInstruction
                );
+               
                chatSessions.forEach(session => {
                    const chatHistory = session.messages
                        .map(mapMessageToHistory)
                        .filter((content): content is { role: Role; parts: any[] } => content !== null);
+                    
                     const historyWithoutWelcome = chatHistory.length > 0 && chatHistory[0].role === 'model'
                         ? chatHistory.slice(1)
                         : chatHistory;
+
                     chatInstances.current[session.id] = ai.chats.create({
                         model: MODEL_NAME,
                         config: { systemInstruction },
@@ -932,16 +1041,20 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
           return false;
       }
   };
+  
   const handleSaveMindMap = (newData: MindMapNode) => {
     if (!mindMapModalState || !activeChatId) return;
+    
     if (chatInstances.current[activeChatId]) {
         delete chatInstances.current[activeChatId];
     }
+
     setChatSessions(prev => 
         prev.map(chat => {
             if (chat.id !== activeChatId) return chat;
             const newMessages = [...chat.messages];
             const targetMsgIndex = mindMapModalState.messageIndex;
+            
             if (targetMsgIndex >= 0 && targetMsgIndex < newMessages.length) {
                  const updatedMsg = { ...newMessages[targetMsgIndex] };
                  updatedMsg.mindMapData = newData;
@@ -953,20 +1066,25 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
     );
     setMindMapModalState(prev => prev ? { ...prev, data: newData } : null);
   };
+
   const handleCreateNewMindMap = (newData: MindMapNode) => {
     if (!activeChatId) return;
+    
     if (chatInstances.current[activeChatId]) {
         delete chatInstances.current[activeChatId];
     }
+
     setChatSessions(prev => 
         prev.map(chat => {
             if (chat.id !== activeChatId) return chat;
+            
             const userMsg: Message = {
                 role: 'user',
                 text: `Tách nhánh "${newData.name}" thành sơ đồ mới.`,
                 timestamp: new Date().toISOString(),
                 mode: 'mind_map'
             };
+
             const modelMsg: Message = {
                 role: 'model',
                 text: 'Sơ đồ tư duy đã được tách thành công:',
@@ -974,18 +1092,22 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
                 mode: 'mind_map',
                 timestamp: new Date().toISOString()
             };
+            
             return { ...chat, messages: [...chat.messages, userMsg, modelMsg] };
         })
     );
     setMindMapModalState(null);
   };
+
   const handleOpenSettings = () => {
+      // Check for Demo User before opening settings
       if (currentUser?.isDemo) {
           setShowLoginPromptModal(true);
           return;
       }
       setIsSettingsOpen(true);
   };
+  
   const handleWhiteboardCapture = (imageData: string) => {
       const base64Data = imageData.split(',')[1];
       handleSendMessage("Hãy giải bài toán hoặc phân tích hình ảnh này.", [{
@@ -995,7 +1117,13 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
       }]);
       setIsWhiteboardOpen(false);
   };
+
+  // Entertainment Menu Handler
   const handleEntertainmentSelect = (selected: Mode | 'breathing') => {
+      // DO NOT CLOSE MENU HERE ON MOBILE
+      // The user will close it manually.
+      // For desktop (hover), the popover behavior handles closing via click outside.
+      
       if (selected === 'breathing') {
           setIsBreathingOpen(true);
       } else if (selected === 'tarot') {
@@ -1004,7 +1132,9 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
           handleNewChat(selected);
       }
   };
+
   const handleTarotReading = (cardName: string, question: string) => {
+      // Start new chat in 'tarot' mode with the context
       const initialMessage: Message = {
           role: 'user',
           text: `Tôi vừa rút được lá bài Tarot: "${cardName}". Vấn đề của tôi là: "${question}". Hãy giải mã lá bài này và đưa ra lời khuyên cho tôi.`,
@@ -1013,6 +1143,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
       };
       handleNewChat('tarot', initialMessage);
   };
+
 
   const activeChat = chatSessions.find(c => c.id === activeChatId);
   const pinnedChats = chatSessions.filter(c => c.isPinned);
@@ -1039,7 +1170,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
               </button>
           </div>
           
-          {/* PWA Install Button */}
+          {/* PWA Install Button - Always visible unless installed */}
           {!isStandalone && (
             <div className="px-3 mt-3">
                 <button 
@@ -1190,7 +1321,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
             </div>
             
             <div className="flex items-center gap-1 sm:gap-2">
-                 {/* Tools */}
+                 {/* Tools moved to header for quick access */}
                  <button onClick={() => setIsCalculatorOpen(true)} className="p-2 text-text-secondary hover:bg-sidebar rounded-lg transition-colors hidden sm:block" title="Máy tính">
                      <CalculatorIcon className="w-5 h-5" />
                  </button>
@@ -1391,7 +1522,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
                         message={msg} 
                         isLastMessage={idx === activeChat.messages.length - 1}
                         isLoading={isLoading}
-                        onFollowUpClick={(originalText, action) => {
+                        onFollowUpClick={(originalText: string, action: FollowUpAction) => {
                             let prompt = '';
                             switch(action) {
                                 case 'explain': prompt = `Giải thích chi tiết hơn về: "${originalText.substring(0, 100)}..."`; break;
@@ -1400,10 +1531,10 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
                             }
                             handleSendMessage(prompt);
                         }}
-                        onApplySchedule={(scheduleText) => {}}
-                        onOpenFlashcards={(cards) => setFlashcardData(cards)}
-                        onOpenMindMap={(data) => setMindMapModalState({ data, messageIndex: idx })}
-                        onAskSelection={(text) => handleSendMessage(`Giải thích giúp tôi đoạn này: "${text}"`)}
+                        onApplySchedule={(scheduleText: string) => {}}
+                        onOpenFlashcards={(cards: { term: string; definition: string }[]) => setFlashcardData(cards)}
+                        onOpenMindMap={(data: MindMapNode) => setMindMapModalState({ data, messageIndex: idx })}
+                        onAskSelection={(text: string) => handleSendMessage(`Giải thích giúp tôi đoạn này: "${text}"`)}
                         onRegenerate={idx === activeChat.messages.length - 1 && msg.role === 'model' ? () => {
                              const lastUserMsgIndex = activeChat.messages.length - 2;
                              if (lastUserMsgIndex >= 0) {
