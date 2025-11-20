@@ -52,9 +52,9 @@ const markdownToHTML = (markdown: string): string => {
     })
     // Tables
     .replace(/^\|(.+)\|\r?\n\|( *[-:]+[-| :]*)\|\r?\n((?:\|.*\|\r?\n?)*)/gm, (match, header, separator, body) => {
-      const headers = header.split('|').slice(1, -1).map(h => `<th>${h.trim()}</th>`).join('');
-      const rows = body.trim().split('\n').map(rowStr => {
-          const cells = rowStr.split('|').slice(1, -1).map(c => `<td>${c.trim()}</td>`).join('');
+      const headers = header.split('|').slice(1, -1).map((h: string) => `<th>${h.trim()}</th>`).join('');
+      const rows = body.trim().split('\n').map((rowStr: string) => {
+          const cells = rowStr.split('|').slice(1, -1).map((c: string) => `<td>${c.trim()}</td>`).join('');
           return `<tr>${cells}</tr>`;
       }).join('');
       return `<div class="table-wrapper"><table><thead><tr>${headers}</tr></thead><tbody>${rows}</tbody></table></div>`;
@@ -174,7 +174,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, isLastMessage = fals
         // Use messageId + counter to ensure stability across re-renders
         const uniqueGraphId = `${messageId.current}-${graphCounter++}`;
         
-        const functionData = content.trim().split('\n').map(line => {
+        const functionData = content.trim().split('\n').map((line: string) => {
             const trimmedLine = line.trim();
             if (!trimmedLine) return null;
 

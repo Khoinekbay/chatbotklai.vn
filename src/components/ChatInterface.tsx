@@ -1,30 +1,29 @@
-
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { GoogleGenAI, Chat } from '@google/genai';
-import { type Message, type ChatSession, type User, type MindMapNode, type Mode, type FollowUpAction, type Role } from '../../types';
-import ChatMessage from '../../components/ChatMessage';
-import ChatInput from '../../components/ChatInput';
-import TypingIndicator from '../../components/TypingIndicator';
-import { CreateExamIcon, SolveExamIcon, CreateScheduleIcon, NewChatIcon, KlAiLogo, UserIcon, LogoutIcon, EditIcon, SearchIcon, PinIcon, LearnModeIcon, ExamModeIcon, DownloadIcon, SunIcon, MoonIcon, TheoryModeIcon, MenuIcon, FeaturesIcon, FlashcardIcon, ShuffleIcon, CloneIcon, CalculatorIcon, PeriodicTableIcon, MinimizeIcon, MaximizeIcon, RestoreIcon, CreateFileIcon, MindMapIcon, TrashIcon, SettingsIcon, MoreHorizontalIcon, KeyIcon, MagicIcon, PresentationIcon, GraderIcon, DocumentSearchIcon, TimerIcon, ChartIcon, LockIcon, ScaleIcon, DiceIcon, NotebookIcon, GamepadIcon, XIcon, DownloadAppIcon, ShareIOSIcon } from '../../components/Icons';
+import { type Message, type ChatSession, type User, type MindMapNode, type Mode, type FollowUpAction, type Role } from '../types';
+import ChatMessage from './ChatMessage';
+import ChatInput from './ChatInput';
+import TypingIndicator from './TypingIndicator';
+import { CreateExamIcon, SolveExamIcon, CreateScheduleIcon, NewChatIcon, KlAiLogo, UserIcon, LogoutIcon, EditIcon, SearchIcon, PinIcon, LearnModeIcon, ExamModeIcon, DownloadIcon, SunIcon, MoonIcon, TheoryModeIcon, MenuIcon, FeaturesIcon, FlashcardIcon, ShuffleIcon, CloneIcon, CalculatorIcon, PeriodicTableIcon, MinimizeIcon, MaximizeIcon, RestoreIcon, CreateFileIcon, MindMapIcon, TrashIcon, SettingsIcon, MoreHorizontalIcon, KeyIcon, MagicIcon, PresentationIcon, GraderIcon, DocumentSearchIcon, TimerIcon, ChartIcon, LockIcon, ScaleIcon, DiceIcon, NotebookIcon, GamepadIcon, XIcon, DownloadAppIcon, ShareIOSIcon } from './Icons';
 import { api } from '../utils/api';
 
 // Lazy load heavy components
-const SettingsModal = React.lazy(() => import('../../components/SettingsModal'));
-const FlashcardView = React.lazy(() => import('../../components/FlashcardView'));
-const Calculator = React.lazy(() => import('../../components/Calculator'));
-const PeriodicTable = React.lazy(() => import('../../components/PeriodicTable'));
-const ToolModal = React.lazy(() => import('../../components/ToolModal'));
-const MindMapModal = React.lazy(() => import('../../components/MindMapModal'));
-const Whiteboard = React.lazy(() => import('../../components/Whiteboard'));
-const PomodoroTimer = React.lazy(() => import('../../components/PomodoroTimer'));
-const UnitConverter = React.lazy(() => import('../../components/UnitConverter'));
-const ProbabilitySim = React.lazy(() => import('../../components/ProbabilitySim'));
-const FormulaNotebook = React.lazy(() => import('../../components/FormulaNotebook'));
-const BreathingExercise = React.lazy(() => import('../../components/BreathingExercise'));
-const LofiPlayer = React.lazy(() => import('../../components/LofiPlayer'));
-const TarotReader = React.lazy(() => import('../../components/TarotReader'));
-const EntertainmentMenu = React.lazy(() => import('../../components/EntertainmentMenu'));
+const SettingsModal = React.lazy(() => import('./SettingsModal'));
+const FlashcardView = React.lazy(() => import('./FlashcardView'));
+const Calculator = React.lazy(() => import('./Calculator'));
+const PeriodicTable = React.lazy(() => import('./PeriodicTable'));
+const ToolModal = React.lazy(() => import('./ToolModal'));
+const MindMapModal = React.lazy(() => import('./MindMapModal'));
+const Whiteboard = React.lazy(() => import('./Whiteboard'));
+const PomodoroTimer = React.lazy(() => import('./PomodoroTimer'));
+const UnitConverter = React.lazy(() => import('./UnitConverter'));
+const ProbabilitySim = React.lazy(() => import('./ProbabilitySim'));
+const FormulaNotebook = React.lazy(() => import('./FormulaNotebook'));
+const BreathingExercise = React.lazy(() => import('./BreathingExercise'));
+const LofiPlayer = React.lazy(() => import('./LofiPlayer'));
+const TarotReader = React.lazy(() => import('./TarotReader'));
+const EntertainmentMenu = React.lazy(() => import('./EntertainmentMenu'));
 
 
 const DEMO_MESSAGE_LIMIT = 10;
@@ -1516,13 +1515,13 @@ Nếu được yêu cầu vẽ biểu đồ, hãy trả về JSON \`chart_json\`
           className="flex-1 overflow-y-auto p-4 md:p-6 scroll-smooth"
         >
             <div className="max-w-3xl mx-auto space-y-6">
-                {activeChat?.messages.map((msg: Message, idx: number) => (
+                {activeChat?.messages.map((msg, idx) => (
                     <ChatMessage 
                         key={idx} 
                         message={msg} 
                         isLastMessage={idx === activeChat.messages.length - 1}
                         isLoading={isLoading}
-                        onFollowUpClick={(originalText: string, action: FollowUpAction) => {
+                        onFollowUpClick={(originalText, action) => {
                             let prompt = '';
                             switch(action) {
                                 case 'explain': prompt = `Giải thích chi tiết hơn về: "${originalText.substring(0, 100)}..."`; break;
@@ -1531,10 +1530,10 @@ Nếu được yêu cầu vẽ biểu đồ, hãy trả về JSON \`chart_json\`
                             }
                             handleSendMessage(prompt);
                         }}
-                        onApplySchedule={(scheduleText: string) => {}}
-                        onOpenFlashcards={(cards: { term: string; definition: string }[]) => setFlashcardData(cards)}
-                        onOpenMindMap={(data: MindMapNode) => setMindMapModalState({ data, messageIndex: idx })}
-                        onAskSelection={(text: string) => handleSendMessage(`Giải thích giúp tôi đoạn này: "${text}"`)}
+                        onApplySchedule={(scheduleText) => {}}
+                        onOpenFlashcards={(cards) => setFlashcardData(cards)}
+                        onOpenMindMap={(data) => setMindMapModalState({ data, messageIndex: idx })}
+                        onAskSelection={(text) => handleSendMessage(`Giải thích giúp tôi đoạn này: "${text}"`)}
                         onRegenerate={idx === activeChat.messages.length - 1 && msg.role === 'model' ? () => {
                              const lastUserMsgIndex = activeChat.messages.length - 2;
                              if (lastUserMsgIndex >= 0) {
