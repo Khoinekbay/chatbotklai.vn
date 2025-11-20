@@ -50,8 +50,6 @@ const LiveAudioTest: React.FC<LiveAudioTestProps> = ({ onClose }) => {
   }, [logs]);
 
   const addLog = (msg: string) => {
-    // Prepend log for data model, but UI might render differently. 
-    // Actually, typical logs append to bottom. Let's stick to appending for easier reading.
     setLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] ${msg}`]);
   };
 

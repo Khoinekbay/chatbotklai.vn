@@ -22,7 +22,11 @@ const EntertainmentMenu: React.FC<EntertainmentMenuProps> = ({ onSelect }) => {
         {items.map(item => (
             <button
                 key={item.id}
-                onClick={() => onSelect(item.id as any)}
+                onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    onSelect(item.id as any);
+                }}
                 className="flex flex-col items-center text-center p-3 rounded-xl bg-input-bg hover:bg-sidebar border border-transparent hover:border-border transition-all active:scale-95 group"
             >
                 <div className="w-10 h-10 rounded-full bg-card shadow-sm flex items-center justify-center mb-2 group-hover:scale-110 transition-transform">

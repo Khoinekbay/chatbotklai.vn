@@ -152,6 +152,7 @@ const LofiPlayer: React.FC = () => {
         {/* Header (Draggable) */}
         <div 
             className="bg-gray-900 p-2 flex items-center justify-between border-b border-gray-800 cursor-move select-none"
+            style={{ touchAction: 'none' }}
             onMouseDown={handleMouseDown}
             onTouchStart={handleTouchStart}
             onTouchMove={handleTouchMove}

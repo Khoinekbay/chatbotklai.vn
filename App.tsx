@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { type User } from './types';
 import Auth from './components/Auth';
 import { api } from './utils/api';
@@ -56,7 +56,7 @@ const App: React.FC = () => {
     verifySession();
   }, []);
 
-  const handleLogout = () => {
+  const handleLogout = useCallback(() => {
       localStorage.removeItem('kl-ai-token');
       localStorage.removeItem('kl-ai-user-data');
       setCurrentUser(null);
@@ -64,9 +64,9 @@ const App: React.FC = () => {
       import('./utils/supabaseClient').then(({ supabase }) => {
           supabase?.auth.signOut();
       });
-  };
+  }, []);
 
-  const handleUpdateUser = async (updates: Partial<User>) => {
+  const handleUpdateUser = useCallback(async (updates: Partial<User>) => {
       if (!currentUser) return;
       
       // Optimistic update
@@ -82,7 +82,7 @@ const App: React.FC = () => {
               console.error("Lỗi đồng bộ dữ liệu người dùng:", error);
           }
       }
-  };
+  }, [currentUser]);
 
   // Draggable Handlers
   const handleMouseDown = (e: React.MouseEvent) => {

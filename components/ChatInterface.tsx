@@ -6,7 +6,7 @@ import { type Message, type ChatSession, type User, type MindMapNode, type Mode,
 import ChatMessage from './ChatMessage';
 import ChatInput from './ChatInput';
 import TypingIndicator from './TypingIndicator';
-import { CreateExamIcon, SolveExamIcon, CreateScheduleIcon, NewChatIcon, KlAiLogo, UserIcon, LogoutIcon, EditIcon, SearchIcon, PinIcon, LearnModeIcon, ExamModeIcon, DownloadIcon, SunIcon, MoonIcon, TheoryModeIcon, MenuIcon, FeaturesIcon, FlashcardIcon, ShuffleIcon, CloneIcon, CalculatorIcon, PeriodicTableIcon, MinimizeIcon, MaximizeIcon, RestoreIcon, CreateFileIcon, MindMapIcon, TrashIcon, SettingsIcon, MoreHorizontalIcon, KeyIcon, MagicIcon, PresentationIcon, GraderIcon, DocumentSearchIcon, TimerIcon, ChartIcon, LockIcon, ScaleIcon, DiceIcon, NotebookIcon, GamepadIcon } from './Icons';
+import { CreateExamIcon, SolveExamIcon, CreateScheduleIcon, NewChatIcon, KlAiLogo, UserIcon, LogoutIcon, EditIcon, SearchIcon, PinIcon, LearnModeIcon, ExamModeIcon, DownloadIcon, SunIcon, MoonIcon, TheoryModeIcon, MenuIcon, FeaturesIcon, FlashcardIcon, ShuffleIcon, CloneIcon, CalculatorIcon, PeriodicTableIcon, MinimizeIcon, MaximizeIcon, RestoreIcon, CreateFileIcon, MindMapIcon, TrashIcon, SettingsIcon, MoreHorizontalIcon, KeyIcon, MagicIcon, PresentationIcon, GraderIcon, DocumentSearchIcon, TimerIcon, ChartIcon, LockIcon, ScaleIcon, DiceIcon, NotebookIcon, GamepadIcon, XIcon } from './Icons';
 import { api } from '../utils/api';
 
 // Lazy load heavy components
@@ -29,8 +29,10 @@ const EntertainmentMenu = React.lazy(() => import('./EntertainmentMenu'));
 
 const DEMO_MESSAGE_LIMIT = 10;
 const MODEL_NAME = 'gemini-2.5-flash';
-// Upgraded to Imagen 4 for better quality
+// Primary model
 const IMAGE_MODEL_NAME = 'imagen-4.0-generate-001';
+// Fallback model if 4.0 fails
+const IMAGE_MODEL_FALLBACK = 'imagen-3.0-generate-001';
 
 declare global {
     interface Window {
@@ -337,8 +339,19 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
       { id: 'scramble_exam', label: 'Trộn đề', icon: <ShuffleIcon className="w-5 h-5" /> },
       { id: 'similar_exam', label: 'Đề tương tự', icon: <CloneIcon className="w-5 h-5" /> },
       { id: 'create_file', label: 'Tạo file', icon: <CreateFileIcon className="w-5 h-5" /> },
+      
+      // Tools
+      { id: 'calculator', label: 'Máy tính', icon: <CalculatorIcon className="w-5 h-5 text-orange-500"/>, action: () => setIsCalculatorOpen(true) },
+      { id: 'periodic_table', label: 'Bảng tuần hoàn', icon: <PeriodicTableIcon className="w-5 h-5 text-green-500"/>, action: () => setIsPeriodicTableOpen(true) },
+      { id: 'formula_notebook', label: 'Sổ công thức', icon: <NotebookIcon className="w-5 h-5 text-red-500"/>, action: () => setIsFormulaNotebookOpen(true) },
+      { id: 'unit_converter', label: 'Đổi đơn vị', icon: <ScaleIcon className="w-5 h-5 text-cyan-500"/>, action: () => setIsUnitConverterOpen(true) },
+      { id: 'pomodoro', label: 'Pomodoro', icon: <TimerIcon className="w-5 h-5 text-red-400"/>, action: () => setIsPomodoroOpen(true) },
   ];
   
+  const toolsIds = ['whiteboard', 'probability', 'calculator', 'periodic_table', 'formula_notebook', 'unit_converter', 'pomodoro'];
+  const toolItems = menuItems.filter(m => toolsIds.includes(m.id));
+  const modeItems = menuItems.filter(m => !toolsIds.includes(m.id));
+
   useEffect(() => {
     const savedTheme = currentUser?.theme || localStorage.getItem('kl-ai-theme') as 'light' | 'dark' || 'light';
     setTheme(savedTheme);
@@ -381,106 +394,109 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
     document.body.style.fontFamily = currentUser?.fontPreference || defaultFont;
   }, [currentUser?.fontPreference]);
 
+  // Sync mode with active chat to ensure UI (input placeholder) is always correct
+  useEffect(() => {
+      if (!activeChatId) return;
+      const chat = chatSessions.find(c => c.id === activeChatId);
+      if (chat) {
+          const lastMsg = chat.messages[chat.messages.length - 1];
+          // Only sync if the mode is explicitly different to prevent loop or flickering
+          // and verify the mode is valid
+          if (lastMsg?.mode && lastMsg.mode !== mode) {
+              setMode(lastMsg.mode);
+          } else if (!lastMsg?.mode && mode !== 'chat') {
+              // Default fallback only if not already chat
+              setMode('chat');
+          }
+      }
+  }, [activeChatId, chatSessions]); // Removed 'mode' dependency to rely on internal check
+
   const handleNewChat = useCallback(async (initialMode: Mode = 'chat', initialMessage?: Message) => {
     if (!currentUser) return;
     
-    // When switching to special modes (RPG, Roast, etc), we want to start clean
     const isSpecialMode = ['rpg', 'roast', 'akinator', 'tarot', 'mbti'].includes(initialMode);
     const title = isSpecialMode ? `Chế độ ${initialMode.toUpperCase()}` : 'Đoạn chat mới';
 
-    let newChat: ChatSession;
-    try {
-        const newId = Date.now().toString();
-        newChat = {
-          id: newId,
-          title: title,
-          messages: initialMessage ? [initialMessage] : [{ role: 'model', text: "Xin chào! Tôi là KL AI. Tôi có thể giúp gì cho bạn hôm nay?" }],
-          isPinned: false,
-        };
-        
-        if (isSpecialMode && !initialMessage) {
-             // Auto-start message for special modes
-             if (initialMode === 'rpg') newChat.messages = [{ role: 'model', text: "Chào mừng lữ khách! Bạn muốn phiêu lưu trong bối cảnh nào (Trung cổ, Cyberpunk, Kiếm hiệp...)?", mode: initialMode }];
-             if (initialMode === 'roast') newChat.messages = [{ role: 'model', text: "Ồ, lại thêm một kẻ muốn nghe sự thật trần trụi à? Được thôi, nói gì đi nào.", mode: initialMode }];
-             if (initialMode === 'akinator') newChat.messages = [{ role: 'model', text: "Ta là Thần đèn Akinator. Hãy nghĩ về một nhân vật và ta sẽ đoán ra. Sẵn sàng chưa?", mode: initialMode }];
-             if (initialMode === 'mbti') newChat.messages = [{ role: 'model', text: "Chào bạn. Hãy bắt đầu bài trắc nghiệm tính cách MBTI nhé. Bạn sẵn sàng chưa?", mode: initialMode }];
-        }
-
-        // If initialMessage is from User (like Tarot), we need to append a placeholder model response
-        if (initialMessage && initialMessage.role === 'user') {
-            newChat.messages.push({ role: 'model', text: '', timestamp: new Date().toISOString(), mode: initialMode });
-        }
-
-        // Use API to save instead of direct local storage
-        if (!currentUser.isDemo) {
-            await api.saveChatSession(currentUser.username, newChat);
-        }
-    } catch (error) {
-        console.error("Không thể tạo cuộc trò chuyện mới:", error);
-        setError("Không thể tạo cuộc trò chuyện mới. Vui lòng thử lại.");
-        return;
+    // 1. Create the object synchronously
+    const newId = Date.now().toString();
+    const newChat: ChatSession = {
+      id: newId,
+      title: title,
+      messages: initialMessage 
+        ? [initialMessage] 
+        : [{ role: 'model', text: "Xin chào! Tôi là KL AI. Tôi có thể giúp gì cho bạn hôm nay?", mode: initialMode }],
+      isPinned: false,
+    };
+    
+    if (isSpecialMode && !initialMessage) {
+         if (initialMode === 'rpg') newChat.messages = [{ role: 'model', text: "Chào mừng lữ khách! Bạn muốn phiêu lưu trong bối cảnh nào (Trung cổ, Cyberpunk, Kiếm hiệp...)?", mode: initialMode }];
+         if (initialMode === 'roast') newChat.messages = [{ role: 'model', text: "Ồ, lại thêm một kẻ muốn nghe sự thật trần trụi à? Được thôi, nói gì đi nào.", mode: initialMode }];
+         if (initialMode === 'akinator') newChat.messages = [{ role: 'model', text: "Ta là Thần đèn Akinator. Hãy nghĩ về một nhân vật và ta sẽ đoán ra. Sẵn sàng chưa?", mode: initialMode }];
+         if (initialMode === 'mbti') newChat.messages = [{ role: 'model', text: "Chào bạn. Hãy bắt đầu bài trắc nghiệm tính cách MBTI nhé. Bạn sẵn sàng chưa?", mode: initialMode }];
     }
 
+    if (initialMessage && initialMessage.role === 'user') {
+        newChat.messages.push({ role: 'model', text: '', timestamp: new Date().toISOString(), mode: initialMode });
+    }
+
+    // 2. UPDATE UI IMMEDIATELY
     setChatSessions(prev => [newChat, ...prev]);
     setActiveChatId(newChat.id);
-    setMode(initialMode);
+    setMode(initialMode); // Explicitly set mode here to be safe
+    
     setIsMobileSidebarOpen(false);
     
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
-    // Important: Pass the current mode to getSystemInstruction to enable override
-    const systemInstruction = getSystemInstruction(currentUser?.aiRole, currentUser?.aiTone, currentUser?.customInstruction, initialMode);
-    const chatInstance = ai.chats.create({
-        model: MODEL_NAME,
-        config: { systemInstruction },
-    });
-    
-    chatInstances.current[newChat.id] = chatInstance;
+    // 3. Initialize Chat Instance (Safely)
+    try {
+        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
+        const systemInstruction = getSystemInstruction(currentUser?.aiRole, currentUser?.aiTone, currentUser?.customInstruction, initialMode);
+        const chatInstance = ai.chats.create({
+            model: MODEL_NAME,
+            config: { systemInstruction },
+        });
+        chatInstances.current[newChat.id] = chatInstance;
 
-    // TRIGGER RESPONSE IMMEDIATELY IF IT IS USER MESSAGE (e.g. Tarot)
-    if (initialMessage && initialMessage.role === 'user') {
-        setIsLoading(true);
-        try {
-            const result = await chatInstance.sendMessageStream({ 
-                message: [{ text: initialMessage.text }] 
-            });
-            
-            let fullText = '';
-            for await (const chunk of result) {
-                const chunkText = chunk.text;
-                if (chunkText) {
-                    fullText += chunkText;
-                    setChatSessions(prev => 
-                        prev.map(chat => {
-                            if (chat.id !== newChat.id) return chat;
-                            const newMessages = [...chat.messages];
-                            const lastMsg = { ...newMessages[newMessages.length - 1] };
-                            // Ensure we are updating the placeholder model message
-                            if (lastMsg.role === 'model') {
-                                lastMsg.text = fullText;
-                            }
-                            newMessages[newMessages.length - 1] = lastMsg;
-                            return { ...chat, messages: newMessages };
-                        })
-                    );
-                }
-            }
-        } catch (err) {
-             console.error("Initial response failed", err);
-             setChatSessions(prev => 
-                prev.map(chat => {
+        // Initial message handling if needed
+        if (initialMessage && initialMessage.role === 'user') {
+            setIsLoading(true);
+            // ... logic for initial message sending ...
+            // (Optimized out for brevity as the core issue is state update)
+            chatInstance.sendMessageStream({ message: [{ text: initialMessage.text }] }).then(async (result) => {
+                 let fullText = '';
+                 for await (const chunk of result) {
+                     if (chunk.text) fullText += chunk.text;
+                     setChatSessions(prev => prev.map(chat => {
+                         if (chat.id !== newChat.id) return chat;
+                         const msgs = [...chat.messages];
+                         const last = { ...msgs[msgs.length - 1] };
+                         if (last.role === 'model') last.text = fullText;
+                         msgs[msgs.length - 1] = last;
+                         return { ...chat, messages: msgs };
+                     }));
+                 }
+            }).catch(err => {
+                console.error("Initial response failed", err);
+                setChatSessions(prev => prev.map(chat => {
                     if (chat.id !== newChat.id) return chat;
-                    const newMessages = [...chat.messages];
-                    const lastMsg = { ...newMessages[newMessages.length - 1] };
-                    lastMsg.isError = true;
-                    lastMsg.text = "Đã có lỗi xảy ra khi xử lý yêu cầu.";
-                    newMessages[newMessages.length - 1] = lastMsg;
-                    return { ...chat, messages: newMessages };
-                })
-            );
-        } finally {
-            setIsLoading(false);
+                    const msgs = [...chat.messages];
+                    const last = { ...msgs[msgs.length - 1] };
+                    last.isError = true;
+                    last.text = "Đã có lỗi xảy ra.";
+                    msgs[msgs.length - 1] = last;
+                    return { ...chat, messages: msgs };
+                }));
+            }).finally(() => setIsLoading(false));
         }
+    } catch (error) {
+        console.error("Failed to initialize chat instance", error);
+        // Even if AI init fails, the UI should still switch to the new chat screen
     }
+
+    // 4. Save to API in Background
+    if (!currentUser.isDemo) {
+        api.saveChatSession(currentUser.username, newChat).catch(err => console.error("Background save failed", err));
+    }
+
   }, [currentUser]);
 
   // Load chats using API
@@ -489,13 +505,15 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
     
     const loadChats = async () => {
         try {
-            // Call API to get chats (Cloud or Local based on config)
             const loadedChats = await api.getChatSessions(currentUser.username);
             
             if (loadedChats.length > 0) {
                 setChatSessions(loadedChats);
-                const lastActive = loadedChats.find(p => !p.isPinned) || loadedChats[0];
-                setActiveChatId(lastActive.id);
+                setActiveChatId(prev => {
+                    if (prev && loadedChats.find(c => c.id === prev)) return prev; 
+                    const lastActive = loadedChats.find(p => !p.isPinned) || loadedChats[0];
+                    return lastActive.id;
+                });
             } else {
                 handleNewChat();
             }
@@ -510,22 +528,16 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
   // Initialize Chat Instances (GenAI)
   useEffect(() => {
     if (!currentUser) return;
-    if (!process.env.API_KEY) {
-        console.error("Warning: API_KEY is missing!");
-    }
-
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
     
     chatSessions.forEach(session => {
         if (!chatInstances.current[session.id]) {
-            // Detect mode from the last message if possible, or default to 'chat'
             const lastMsgMode = session.messages[session.messages.length - 1]?.mode || 'chat';
             
             const systemInstruction = getSystemInstruction(
                 currentUser?.aiRole, 
                 currentUser?.aiTone, 
                 currentUser?.customInstruction, 
-                lastMsgMode // Pass the mode found in session
+                lastMsgMode
             );
             
             const chatHistory = session.messages
@@ -536,11 +548,16 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
                 ? chatHistory.slice(1) 
                 : chatHistory;
 
-            chatInstances.current[session.id] = ai.chats.create({
-                model: MODEL_NAME,
-                config: { systemInstruction },
-                history: historyWithoutWelcome,
-            });
+            try {
+                const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
+                chatInstances.current[session.id] = ai.chats.create({
+                    model: MODEL_NAME,
+                    config: { systemInstruction },
+                    history: historyWithoutWelcome,
+                });
+            } catch (e) {
+                console.error("Lazy init failed for chat", session.id);
+            }
         }
     });
   }, [chatSessions, currentUser]);
@@ -573,21 +590,26 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as HTMLElement;
+
+      // FIX: Ignore clicks inside mobile menus (portals) to prevent premature closing
+      if (target.closest('.mobile-menu-content')) return;
+
       // Close Features Popover
       if (
         featuresPopoverRef.current && 
-        !featuresPopoverRef.current.contains(event.target as Node) &&
+        !featuresPopoverRef.current.contains(target) &&
         featuresButtonRef.current &&
-        !featuresButtonRef.current.contains(event.target as Node)
+        !featuresButtonRef.current.contains(target)
       ) {
         setIsFeaturesPopoverOpen(false);
       }
       // Close Entertainment Popover
       if (
         entertainmentPopoverRef.current && 
-        !entertainmentPopoverRef.current.contains(event.target as Node) &&
+        !entertainmentPopoverRef.current.contains(target) &&
         entertainmentButtonRef.current &&
-        !entertainmentButtonRef.current.contains(event.target as Node)
+        !entertainmentButtonRef.current.contains(target)
       ) {
         setIsEntertainmentPopoverOpen(false);
       }
@@ -726,16 +748,37 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
         // --- IMAGE GENERATION MODE ---
         if (mode === 'generate_image') {
              const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
-             const response = await ai.models.generateImages({
-                model: IMAGE_MODEL_NAME,
-                prompt: text,
-                config: {
-                  numberOfImages: 1,
-                  aspectRatio: '1:1',
-                },
-             });
+             let generatedImage;
              
-             const generatedImage = response.generatedImages?.[0]?.image;
+             try {
+                 // Try Imagen 4 first (High Quality)
+                 const response = await ai.models.generateImages({
+                    model: IMAGE_MODEL_NAME,
+                    prompt: text,
+                    config: {
+                      numberOfImages: 1,
+                      aspectRatio: '1:1',
+                    },
+                 });
+                 generatedImage = response.generatedImages?.[0]?.image;
+             } catch (err: any) {
+                 console.warn(`Imagen 4 failed: ${err.message}. Falling back to Imagen 3...`);
+                 // Fallback to Imagen 3 (More stable)
+                 try {
+                    const response = await ai.models.generateImages({
+                        model: IMAGE_MODEL_FALLBACK,
+                        prompt: text,
+                        config: {
+                            numberOfImages: 1,
+                            aspectRatio: '1:1',
+                        },
+                    });
+                    generatedImage = response.generatedImages?.[0]?.image;
+                 } catch (fallbackErr: any) {
+                     console.error("Imagen 3 fallback failed:", fallbackErr);
+                     throw fallbackErr; // Re-throw to be caught by main catch block
+                 }
+             }
              
              if (generatedImage) {
                  const base64ImageBytes = generatedImage.imageBytes;
@@ -899,6 +942,12 @@ Nếu được yêu cầu vẽ biểu đồ, hãy trả về JSON \`chart_json\`
         
         if (mode === 'generate_image') {
             errorMessage = "Không thể tạo ảnh. Có thể do mô tả chứa nội dung không phù hợp hoặc dịch vụ đang bận.";
+            // Provide specific hint for Vercel deployment issues
+            if (!process.env.API_KEY) {
+                errorMessage += " (Lỗi: Thiếu API Key trong Environment Variables)";
+            } else if (error.message?.includes('403')) {
+                errorMessage += " (Lỗi: API Key không có quyền truy cập Imagen. Vui lòng kiểm tra cài đặt dự án Google Cloud)";
+            }
         } else {
             errorMessage += "(Kiểm tra API Key của bạn hoặc định dạng file)";
         }
@@ -1071,13 +1120,15 @@ Nếu được yêu cầu vẽ biểu đồ, hãy trả về JSON \`chart_json\`
 
   // Entertainment Menu Handler
   const handleEntertainmentSelect = (selected: Mode | 'breathing') => {
-      setIsEntertainmentPopoverOpen(false);
+      // DO NOT CLOSE MENU HERE ON MOBILE
+      // The user will close it manually.
+      // For desktop (hover), the popover behavior handles closing via click outside.
+      
       if (selected === 'breathing') {
           setIsBreathingOpen(true);
       } else if (selected === 'tarot') {
           setIsTarotOpen(true);
       } else {
-          // Start new chat with specific mode
           handleNewChat(selected);
       }
   };
@@ -1340,33 +1391,67 @@ Nếu được yêu cầu vẽ biểu đồ, hãy trả về JSON \`chart_json\`
         {isFeaturesPopoverOpen && createPortal(
             <div className="fixed inset-0 z-[100] sm:hidden flex flex-col justify-end">
                 <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setIsFeaturesPopoverOpen(false)} />
-                <div className="relative bg-card border-t border-border rounded-t-3xl p-5 shadow-2xl animate-slide-in-up max-h-[75vh] overflow-y-auto">
-                   {/* Handle bar */}
-                   <div className="flex justify-center mb-6">
-                       <div className="w-12 h-1.5 bg-border/50 rounded-full"></div>
+                <div className="mobile-menu-content relative bg-card border-t border-border rounded-t-3xl p-5 shadow-2xl animate-slide-in-up max-h-[85vh] overflow-y-auto flex flex-col">
+                   {/* Handle bar with Close Button */}
+                   <div className="flex items-center justify-between mb-4 flex-shrink-0">
+                       <h3 className="text-lg font-bold">Menu Chức năng</h3>
+                       <button 
+                           onClick={() => setIsFeaturesPopoverOpen(false)}
+                           className="px-4 py-2 bg-red-500 text-white rounded-full hover:bg-red-600 transition-colors font-bold text-sm flex items-center gap-1"
+                       >
+                           <XIcon className="w-4 h-4" /> Đóng
+                       </button>
                    </div>
-                   <h3 className="text-lg font-bold mb-4 text-center">Chọn chế độ</h3>
-                   <div className="grid grid-cols-2 gap-3 pb-8">
-                      {menuItems.map(m => (
-                          <button
-                              key={m.id}
-                              onClick={() => {
-                                  if (m.action) m.action();
-                                  else handleNewChat(m.id as Mode);
-                                  setIsFeaturesPopoverOpen(false);
-                              }}
-                              className={`flex flex-col items-center justify-center gap-2 p-4 rounded-xl border transition-all active:scale-95
-                                  ${mode === m.id && !m.action 
-                                      ? 'bg-brand/10 border-brand text-brand font-semibold' 
-                                      : 'bg-input-bg border-transparent hover:bg-sidebar text-text-secondary'}
-                              `}
-                          >
-                              <div className={`p-2 rounded-full ${mode === m.id && !m.action ? 'bg-brand text-white' : 'bg-card text-current'}`}>
-                                   {m.icon}
-                              </div>
-                              <span className="text-sm truncate w-full text-center">{m.label}</span>
-                          </button>
-                      ))}
+                   
+                   <div className="overflow-y-auto pb-8 space-y-6">
+                      <div>
+                          <h4 className="text-xs font-bold text-text-secondary uppercase mb-3 px-1">Chế độ chính</h4>
+                          <div className="grid grid-cols-2 gap-3">
+                            {modeItems.map(m => (
+                                <button
+                                    key={m.id}
+                                    onClick={(e) => {
+                                        e.preventDefault();
+                                        e.stopPropagation();
+                                        // DO NOT CLOSE MENU - User closes manually with Red X
+                                        handleNewChat(m.id as Mode);
+                                    }}
+                                    className={`flex flex-col items-center justify-center gap-2 p-4 rounded-xl border transition-all active:scale-95
+                                        ${mode === m.id 
+                                            ? 'bg-brand/10 border-brand text-brand font-semibold shadow-sm' 
+                                            : 'bg-input-bg border-transparent hover:bg-sidebar text-text-secondary'}
+                                    `}
+                                >
+                                    <div className={`p-2 rounded-full ${mode === m.id ? 'bg-brand text-white' : 'bg-card text-current'}`}>
+                                        {m.icon}
+                                    </div>
+                                    <span className="text-sm truncate w-full text-center">{m.label}</span>
+                                </button>
+                            ))}
+                          </div>
+                      </div>
+
+                      <div>
+                          <h4 className="text-xs font-bold text-text-secondary uppercase mb-3 px-1">Công cụ học tập</h4>
+                          <div className="grid grid-cols-2 gap-3">
+                             {toolItems.map(m => (
+                                <button
+                                    key={m.id}
+                                    onClick={(e) => {
+                                        e.preventDefault();
+                                        e.stopPropagation();
+                                        if (m.action) m.action();
+                                    }}
+                                    className="flex flex-col items-center justify-center gap-2 p-4 rounded-xl bg-input-bg hover:bg-sidebar border border-transparent text-text-secondary transition-all active:scale-95"
+                                >
+                                    <div className="p-2 rounded-full bg-card text-current">
+                                        {m.icon}
+                                    </div>
+                                    <span className="text-sm truncate w-full text-center">{m.label}</span>
+                                </button>
+                             ))}
+                          </div>
+                      </div>
                    </div>
                 </div>
             </div>,
@@ -1377,11 +1462,17 @@ Nếu được yêu cầu vẽ biểu đồ, hãy trả về JSON \`chart_json\`
         {isEntertainmentPopoverOpen && createPortal(
             <div className="fixed inset-0 z-[100] sm:hidden flex flex-col justify-end">
                 <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setIsEntertainmentPopoverOpen(false)} />
-                <div className="relative bg-card border-t border-border rounded-t-3xl p-5 shadow-2xl animate-slide-in-up max-h-[75vh] overflow-y-auto">
-                    <div className="flex justify-center mb-6">
-                       <div className="w-12 h-1.5 bg-border/50 rounded-full"></div>
+                <div className="mobile-menu-content relative bg-card border-t border-border rounded-t-3xl p-5 shadow-2xl animate-slide-in-up max-h-[75vh] overflow-y-auto">
+                    <div className="flex items-center justify-between mb-4">
+                       <h3 className="text-lg font-bold">Giải trí & Chữa lành</h3>
+                       <button 
+                           onClick={() => setIsEntertainmentPopoverOpen(false)}
+                           className="px-4 py-2 bg-red-500 text-white rounded-full hover:bg-red-600 transition-colors font-bold text-sm flex items-center gap-1"
+                       >
+                           <XIcon className="w-4 h-4" /> Đóng
+                       </button>
                    </div>
-                   <h3 className="text-lg font-bold mb-4 text-center">Giải trí & Chữa lành</h3>
+                   
                    <div className="pb-8">
                         <React.Suspense fallback={<div className="p-4 text-center text-xs text-text-secondary">Đang tải menu...</div>}>
                             <EntertainmentMenu onSelect={handleEntertainmentSelect} />
