@@ -1,33 +1,9 @@
 
-
-import { User, ChatSession, Message } from '../types';
+import { User, ChatSession } from '../types';
 import { supabase } from './supabaseClient';
 
 const USERS_KEY = 'kl_ai_users';
 const CHATS_KEY_PREFIX = 'kl_ai_chats-';
-
-// Interfaces for database tables
-interface DbProfile {
-    id: string;
-    username: string;
-    email: string | null;
-    ai_role: User['aiRole'];
-    ai_tone: User['aiTone'];
-    theme: User['theme'];
-    avatar: string;
-    font_preference: string;
-    background_url: string;
-    custom_instruction: string;
-}
-
-interface DbChat {
-    id: string;
-    user_id: string;
-    title: string;
-    messages: Message[];
-    is_pinned: boolean;
-    updated_at: string;
-}
 
 // --- Helper functions for LocalStorage (Fallback) ---
 
@@ -111,7 +87,7 @@ export const api = {
           try {
             const { data: { session } } = await supabase.auth.getSession();
             if (session?.user) {
-                const { data: profile, error } = await supabase.from('profiles').select('*').eq('id', session.user.id).single<DbProfile>();
+                const { data: profile, error } = await supabase.from('profiles').select('*').eq('id', session.user.id).single();
                 if (profile) {
                     return {
                         username: profile.username,
@@ -208,7 +184,7 @@ export const api = {
                 .from('profiles')
                 .select('*')
                 .eq('id', data.user.id)
-                .single<DbProfile>();
+                .single();
             
             if (profileError) {
                 // TỰ ĐỘNG SỬA LỖI: Nếu đăng nhập được nhưng không thấy Profile
@@ -416,7 +392,7 @@ export const api = {
                     .order('updated_at', { ascending: false });
                 
                 if (!error && data) {
-                    return data.map((item: DbChat) => ({
+                    return data.map((item: any) => ({
                         id: item.id,
                         title: item.title,
                         messages: item.messages,

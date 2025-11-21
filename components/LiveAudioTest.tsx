@@ -7,11 +7,6 @@ interface LiveAudioTestProps {
   onClose: () => void;
 }
 
-interface LiveSession {
-    sendRealtimeInput: (input: { media: { mimeType: string; data: string }}) => void;
-    close: () => void;
-}
-
 const LiveAudioTest: React.FC<LiveAudioTestProps> = ({ onClose }) => {
   const [status, setStatus] = useState<string>("Đã ngắt kết nối");
   const [logs, setLogs] = useState<string[]>([]);
@@ -23,7 +18,7 @@ const LiveAudioTest: React.FC<LiveAudioTestProps> = ({ onClose }) => {
   const logsEndRef = useRef<HTMLDivElement>(null);
   
   // Store the session promise
-  const sessionPromiseRef = useRef<Promise<LiveSession> | null>(null);
+  const sessionPromiseRef = useRef<Promise<any> | null>(null);
   
   // Audio Context Refs
   const inputAudioContextRef = useRef<AudioContext | null>(null);
@@ -172,7 +167,7 @@ const LiveAudioTest: React.FC<LiveAudioTestProps> = ({ onClose }) => {
       const processor = audioContext.createScriptProcessor(4096, 1, 1);
       processorRef.current = processor;
 
-      processor.onaudioprocess = (e: AudioProcessingEvent) => {
+      processor.onaudioprocess = (e) => {
         const inputData = e.inputBuffer.getChannelData(0);
         const pcmData = floatTo16BitPCM(inputData);
         const base64String = arrayBufferToBase64(pcmData.buffer);
@@ -248,7 +243,7 @@ const LiveAudioTest: React.FC<LiveAudioTestProps> = ({ onClose }) => {
       
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       
-      const sessionPromise: Promise<LiveSession> = ai.live.connect({
+      const sessionPromise = ai.live.connect({
         model: 'gemini-2.5-flash-native-audio-preview-09-2025',
         config: {
           responseModalities: [Modality.AUDIO],
@@ -280,17 +275,17 @@ const LiveAudioTest: React.FC<LiveAudioTestProps> = ({ onClose }) => {
                 addLog("🤖 Kết thúc lượt nói.");
             }
           },
-          onclose: (e: CloseEvent) => {
+          onclose: () => {
             setStatus("🔒 Đã đóng");
-            addLog(`🔒 Connection closed: Code ${e.code}, Reason: ${e.reason}`);
+            addLog("🔒 Connection closed.");
             setIsConnecting(false);
             setIsConnected(false);
             setIsRecording(false);
             stopAudioStream();
           },
-          onerror: (e: ErrorEvent) => {
+          onerror: (e) => {
             setStatus("❌ Lỗi");
-            addLog(`❌ Error: ${e.message}`);
+            addLog(`❌ Error: ${e instanceof Error ? e.message : 'Unknown'}`);
             setIsConnecting(false);
             setIsConnected(false);
             setIsRecording(false);

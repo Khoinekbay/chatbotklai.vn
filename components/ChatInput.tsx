@@ -1,5 +1,6 @@
 
 
+
 import React, { useState, useRef, useEffect } from 'react';
 import { SendIcon, AttachmentIcon, XIcon, MicrophoneIcon, FileIcon, ScanIcon } from './Icons';
 
@@ -12,36 +13,11 @@ interface ChatInputProps {
   accept?: string;
 }
 
-// Custom types for the experimental SpeechRecognition API
-interface SpeechRecognitionResult {
-    isFinal: boolean;
-    [index: number]: { transcript: string };
-}
-interface SpeechRecognitionEvent {
-    resultIndex: number;
-    results: SpeechRecognitionResult[];
-}
-interface SpeechRecognitionErrorEvent {
-    error: string;
-}
-interface ISpeechRecognition {
-    continuous: boolean;
-    interimResults: boolean;
-    lang: string;
-    onstart: () => void;
-    onresult: (event: SpeechRecognitionEvent) => void;
-    onend: () => void;
-    onerror: (event: SpeechRecognitionErrorEvent) => void;
-    start: () => void;
-    stop: () => void;
-}
-
-
 // Let TypeScript know about the experimental SpeechRecognition API
 declare global {
     interface Window {
-      SpeechRecognition: new () => ISpeechRecognition;
-      webkitSpeechRecognition: new () => ISpeechRecognition;
+      SpeechRecognition: any;
+      webkitSpeechRecognition: any;
     }
 }
 
@@ -52,7 +28,7 @@ const ChatInput: React.FC<ChatInputProps> = ({ onSendMessage, isLoading, placeho
   const [isListening, setIsListening] = useState(false);
   const [isExtractingText, setIsExtractingText] = useState<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const recognitionRef = useRef<ISpeechRecognition | null>(null);
+  const recognitionRef = useRef<any | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   // Auto-resize textarea
@@ -78,7 +54,7 @@ const ChatInput: React.FC<ChatInputProps> = ({ onSendMessage, isLoading, placeho
         setIsListening(true);
     };
     
-    recognition.onresult = (event: SpeechRecognitionEvent) => {
+    recognition.onresult = (event: any) => {
       let interimTranscript = '';
       let finalTranscript = '';
 
@@ -99,7 +75,7 @@ const ChatInput: React.FC<ChatInputProps> = ({ onSendMessage, isLoading, placeho
       setIsListening(false);
     };
 
-    recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
+    recognition.onerror = (event: any) => {
       console.error('Speech recognition error:', event.error);
       setIsListening(false);
       if (event.error === 'not-allowed' || event.error === 'permission-denied') {

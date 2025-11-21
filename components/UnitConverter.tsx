@@ -1,5 +1,4 @@
 
-
 import React, { useState } from 'react';
 import { ScaleIcon } from './Icons';
 

@@ -1,5 +1,4 @@
 
-
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { GoogleGenAI, Chat } from '@google/genai';
@@ -37,138 +36,26 @@ declare global {
     }
 }
 
-const getInitialMessageForMode = (mode: Mode): string => {
-    const defaultMessage = "Xin chào! Tôi là KL AI. Tôi có thể giúp gì cho bạn hôm nay?";
-    switch (mode) {
-        case 'chat':
-            return defaultMessage;
-        case 'create_exam':
-            return "Chế độ Tạo Đề Thi đã được bật! Hãy cho tôi biết chủ đề, số lượng câu hỏi, và độ khó để tôi bắt đầu nhé.";
-        case 'solve_exam':
-            return "Chế độ Giải Đề đã được bật! Vui lòng gửi hình ảnh hoặc dán nội dung đề thi vào đây để tôi giải giúp bạn.";
-        case 'create_schedule':
-            return "Chào bạn đến với chế độ Lập Lịch Học Tập! Hãy cho tôi biết các môn học, thời gian rảnh và mục tiêu của bạn.";
-        case 'learn':
-            return "Chào mừng bạn đến với chế độ Học Tập cùng Gia sư AI! Hãy bắt đầu bằng cách cho tôi biết chủ đề bạn muốn học hôm nay.";
-        case 'exam':
-            return "Chế độ Thi Thử đã sẵn sàng. Bạn muốn kiểm tra kiến thức về chủ đề gì?";
-        case 'theory':
-            return "Chế độ Lý Thuyết Chuyên Sâu đã được kích hoạt. Vui lòng cho biết chủ đề bạn muốn tìm hiểu sâu.";
-        case 'flashcard':
-            return "Chế độ Flashcard đã được bật! Hãy gửi nội dung bạn muốn tóm tắt thành các thẻ ghi nhớ nhé.";
-        case 'scramble_exam':
-            return "Chế độ Trộn Đề Thi đây! Gửi đề thi gốc của bạn vào đây và tôi sẽ xáo trộn nó cho bạn.";
-        case 'similar_exam':
-            return "Chế độ Tạo Đề Tương Tự đã sẵn sàng. Hãy gửi cho tôi đề thi mẫu nhé.";
-        case 'create_file':
-            return "Bạn muốn tạo file gì nào? Hãy cho tôi biết tên file (ví dụ: `index.html`) và mô tả nội dung của nó.";
-        case 'mind_map':
-            return "Chế độ Sơ Đồ Tư Duy đã được bật. Hãy đưa ra chủ đề hoặc dán đoạn văn bản bạn muốn tôi hệ thống hóa.";
-        case 'generate_image':
-            return "Chào mừng bạn đến với AI vẽ tranh! Hãy mô tả thật chi tiết hình ảnh bạn muốn tạo.";
-        case 'grader':
-            return "Chế độ Chấm Bài đã được kích hoạt. Vui lòng tải lên hình ảnh bài làm của bạn.";
-        case 'chat_document':
-            return "Chào bạn! Hãy tải lên tài liệu (PDF, TXT,...) và đặt câu hỏi về nội dung bên trong nhé.";
-        case 'data_analysis':
-            return "Chào mừng đến với chế độ Phân Tích Dữ Liệu. Hãy tải lên file Excel/CSV và cho tôi biết yêu cầu của bạn.";
-        // Entertainment modes
-        case 'rpg':
-            return "Chào mừng lữ khách! Bạn muốn phiêu lưu trong bối cảnh nào (Trung cổ, Cyberpunk, Kiếm hiệp...)?";
-        case 'roast':
-            return "Ồ, lại thêm một kẻ muốn nghe sự thật trần trụi à? Được thôi, nói gì đi nào.";
-        case 'akinator':
-            return "Ta là Thần đèn Akinator. Hãy nghĩ về một nhân vật và ta sẽ đoán ra. Sẵn sàng chưa?";
-        case 'mbti':
-            return "Chào bạn. Hãy bắt đầu bài trắc nghiệm tính cách MBTI nhé. Bạn sẵn sàng chưa?";
-        default:
-            return defaultMessage;
-    }
-}
-
 const getSystemInstruction = (role: User['aiRole'] = 'assistant', tone: User['aiTone'] = 'balanced', customInstruction?: string, currentMode?: Mode): string => {
     
-    // --- SPECIAL/FUNCTIONAL MODES OVERRIDE ---
-    // These have very specific instructions and ignore general user settings like role/tone.
-    switch (currentMode) {
-        // Entertainment
-        case 'rpg':
-            return `Bạn là Game Master (GM) của một trò chơi nhập vai dạng văn bản (Text Adventure). Hãy dẫn dắt người chơi qua một cốt truyện thú vị, sáng tạo. Bắt đầu bằng việc mô tả bối cảnh hiện tại và hỏi người chơi muốn làm gì. Luôn mô tả hậu quả của hành động một cách sinh động. Giữ giọng văn lôi cuốn.`;
-        case 'roast':
-            return `Bạn là một danh hài độc thoại cực kỳ xéo xắt, chua ngoa và hài hước (Roast Master). Nhiệm vụ của bạn là 'khịa', châm biếm và 'roast' người dùng một cách thâm thúy nhưng buồn cười. Hãy dùng ngôn ngữ mạnh, slang, teencode, meme nếu cần. Biến mọi câu nói của người dùng thành trò đùa. Đừng quá nghiêm túc.`;
-        case 'akinator':
-            return `Bạn là Thần đèn Akinator. Người dùng đang nghĩ về một nhân vật nổi tiếng (thực hoặc hư cấu). Nhiệm vụ của bạn là đoán ra nhân vật đó bằng cách đặt các câu hỏi Yes/No. Hãy hỏi tối đa 20 câu. Sau mỗi câu trả lời, hãy đưa ra câu hỏi tiếp theo hoặc đoán nhân vật.`;
-        case 'tarot':
-            return `Bạn là một Tarot Reader (Người đọc bài Tarot) chuyên nghiệp, huyền bí và sâu sắc. Bạn sẽ nhận được tên lá bài và vấn đề của người dùng. Hãy giải thích ý nghĩa lá bài trong bối cảnh đó, đưa ra lời khuyên chữa lành. Giọng văn nhẹ nhàng, thấu cảm, mang màu sắc tâm linh.`;
-        case 'mbti':
-            return `Bạn là chuyên gia tâm lý học. Hãy đặt các câu hỏi trắc nghiệm ngắn để xác định tính cách MBTI của người dùng. Hỏi từng câu một. Sau khoảng 10 câu, hãy đưa ra dự đoán về nhóm tính cách của họ.`;
-        
-        // Strict Formatting & Learning
-        case 'flashcard':
-            return `CHẾ ĐỘ TẠO FLASHCARD (THẺ GHI NHỚ):
-            Nhiệm vụ: Tóm tắt nội dung người dùng cung cấp thành các cặp "Thuật ngữ" và "Định nghĩa" để học tập.
-            YÊU CẦU ĐỊNH DẠNG BẮT BUỘC:
-            1. Trả về MỘT Bảng Markdown (Markdown Table) duy nhất.
-            2. Bảng phải có đúng 2 cột với tiêu đề: | Thuật ngữ | Định nghĩa |
-            3. Hãy cố gắng trích xuất TOÀN BỘ các thuật ngữ quan trọng và định nghĩa của chúng một cách chi tiết vừa đủ.
-            4. Không viết thêm lời dẫn dài dòng, đi thẳng vào bảng.`;
-        case 'mind_map':
-            return `CHẾ ĐỘ TẠO SƠ ĐỒ TƯ DUY (MIND MAP):
-            Nhiệm vụ: Phân tích chủ đề hoặc văn bản thành cấu trúc phân cấp (cây) để vẽ sơ đồ.
-            YÊU CẦU ĐỊNH DẠNG BẮT BUỘC:
-            1. Trả về MỘT Danh sách Markdown (Markdown List).
-            2. Sử dụng dấu gạch ngang (-) đầu dòng cho mỗi mục.
-            3. Sử dụng thụt đầu dòng (Indent - 2 dấu cách) để thể hiện cấp độ cha - con.
-            4. Dòng đầu tiên là Chủ đề chính (Gốc).`;
-        case 'learn':
-            return `CHẾ ĐỘ HỌC TẬP (GIA SƯ AI):
-            Vai trò: Bạn là một gia sư riêng kiên nhẫn, thân thiện và giỏi sư phạm.
-            Phương pháp:
-            1. Giải thích khái niệm theo từng bước nhỏ (Step-by-step).
-            2. Dùng ngôn ngữ đơn giản, dễ hiểu, có ví dụ thực tế hoặc phép ẩn dụ.
-            3. QUAN TRỌNG: Sau khi giải thích xong một ý chính, hãy ĐẶT CÂU HỎI KIỂM TRA (Quiz) để đảm bảo người dùng đã hiểu trước khi sang phần tiếp theo.`;
-        case 'theory':
-            return `CHẾ ĐỘ LÝ THUYẾT CHUYÊN SÂU:
-            Vai trò: Bạn là giáo sư biên soạn sách giáo khoa chuyên khảo.
-            Phương pháp:
-            1. Trình bày nội dung cực kỳ chi tiết, hệ thống và chính xác.
-            2. Cấu trúc bài giảng chuẩn mực: Định nghĩa -> Định lý/Tính chất -> Công thức (dùng LaTeX $$...$$) -> Ví dụ minh họa.`;
-
-        // Functional Modes
-        case 'create_exam':
-            return `BẠN LÀ AI TẠO ĐỀ THI. Dựa trên yêu cầu của người dùng (chủ đề, số câu, độ khó), hãy tạo ra một đề thi có định dạng rõ ràng. Luôn cung cấp đáp án chi tiết ở cuối dưới tiêu đề '## Đáp Án'.`;
-        case 'solve_exam':
-            return `BẠN LÀ AI GIẢI ĐỀ THI. Người dùng sẽ cung cấp một đề thi (văn bản hoặc hình ảnh). Nhiệm vụ của bạn là giải tất cả các câu hỏi một cách chính xác và cung cấp lời giải chi tiết, từng bước cho mỗi câu trả lời.`;
-        case 'create_schedule':
-            return `BẠN LÀ AI LẬP KẾ HOẠCH HỌC TẬP. Dựa trên mục tiêu, thời gian và môn học của người dùng, hãy tạo một lịch trình học tập hiệu quả trong bảng Markdown. Đồng thời, xuất ra khối \`schedule_json\` cho các sự kiện quan trọng.`;
-        case 'exam':
-            return `BẠN LÀ GIÁM THỊ COI THI. Bắt đầu bằng cách hỏi người dùng muốn thi về chủ đề gì. Sau đó, đưa ra TỪNG CÂU HỎI MỘT. Chờ người dùng trả lời, sau đó chấm điểm, giải thích đáp án đúng, rồi mới sang câu tiếp theo.`;
-        case 'scramble_exam':
-            return `BẠN LÀ AI TRỘN ĐỀ THI. Nhiệm vụ của bạn là xáo trộn vị trí của các câu hỏi VÀ cả vị trí của các đáp án (A, B, C, D) trong mỗi câu hỏi trắc nghiệm của một đề thi do người dùng cung cấp. Đầu ra phải là đề thi đã được xáo trộn hoàn toàn, giữ nguyên định dạng.`;
-        case 'similar_exam':
-            return `BẠN LÀ AI TẠO ĐỀ TƯƠNG TỰ. Người dùng sẽ cung cấp một đề thi mẫu. Nhiệm vụ của bạn là tạo một đề thi mới có cùng cấu trúc, dạng câu hỏi, và độ khó, nhưng với nội dung và số liệu khác.`;
-        case 'create_file':
-            return `BẠN LÀ AI TẠO FILE MÃ NGUỒN.
-            YÊU CẦU ĐỊNH DẠNG ĐẦU RA BẮT BUỘC:
-            1. Dòng đầu tiên PHẢI là "FILENAME: [tên file].[phần mở rộng]". Ví dụ: FILENAME: index.html
-            2. Ngay sau dòng đó là một khối mã Markdown duy nhất chứa toàn bộ nội dung file.
-            3. Không thêm bất kỳ lời giải thích hay văn bản nào khác.
-            VÍ DỤ MẪU:
-            FILENAME: script.py
-            \`\`\`python
-            def hello():
-                print("Hello, World!")
-            hello()
-            \`\`\``;
-        case 'grader':
-             return `BẠN LÀ MỘT GIÁO VIÊN CHẤM THI CHUYÊN NGHIỆP VÀ KHẮT KHE. Nhiệm vụ: Phân tích hình ảnh bài làm của học sinh, chấm điểm và đưa ra nhận xét chi tiết theo thang điểm 10. Tìm kỹ các lỗi sai và trình bày kết quả trong định dạng Markdown có cấu trúc rõ ràng: Điểm số, Lỗi sai, và Lời khuyên.`;
-        case 'chat_document':
-             return `BẠN LÀ TRỢ LÝ PHÂN TÍCH TÀI LIỆU. Nhiệm vụ: Trả lời câu hỏi của người dùng CHỈ DỰA TRÊN nội dung file đính kèm. Tuyệt đối không bịa đặt thông tin. Nếu thông tin không có trong file, hãy trả lời: "Thông tin này không có trong tài liệu được cung cấp."`;
-        case 'data_analysis':
-             return `BẠN LÀ CHUYÊN GIA PHÂN TÍCH DỮ LIỆU. Phân tích dữ liệu được cung cấp, trả lời câu hỏi, tìm insight và tạo biểu đồ. Khi được yêu cầu vẽ biểu đồ, bạn PHẢI trả về khối JSON \`chart_json\`.`;
+    // --- SPECIAL MODES OVERRIDE (Ignore user settings) ---
+    if (currentMode === 'rpg') {
+        return `Bạn là Game Master (GM) của một trò chơi nhập vai dạng văn bản (Text Adventure). Hãy dẫn dắt người chơi qua một cốt truyện thú vị, sáng tạo. Bắt đầu bằng việc mô tả bối cảnh hiện tại và hỏi người chơi muốn làm gì. Luôn mô tả hậu quả của hành động một cách sinh động. Giữ giọng văn lôi cuốn.`;
+    }
+    if (currentMode === 'roast') {
+        return `Bạn là một danh hài độc thoại cực kỳ xéo xắt, chua ngoa và hài hước (Roast Master). Nhiệm vụ của bạn là 'khịa', châm biếm và 'roast' người dùng một cách thâm thúy nhưng buồn cười. Hãy dùng ngôn ngữ mạnh, slang, teencode, meme nếu cần. Biến mọi câu nói của người dùng thành trò đùa. Đừng quá nghiêm túc.`;
+    }
+    if (currentMode === 'akinator') {
+        return `Bạn là Thần đèn Akinator. Người dùng đang nghĩ về một nhân vật nổi tiếng (thực hoặc hư cấu). Nhiệm vụ của bạn là đoán ra nhân vật đó bằng cách đặt các câu hỏi Yes/No. Hãy hỏi tối đa 20 câu. Sau mỗi câu trả lời, hãy đưa ra câu hỏi tiếp theo hoặc đoán nhân vật.`;
+    }
+    if (currentMode === 'tarot') {
+        return `Bạn là một Tarot Reader (Người đọc bài Tarot) chuyên nghiệp, huyền bí và sâu sắc. Bạn sẽ nhận được tên lá bài và vấn đề của người dùng. Hãy giải thích ý nghĩa lá bài trong bối cảnh đó, đưa ra lời khuyên chữa lành. Giọng văn nhẹ nhàng, thấu cảm, mang màu sắc tâm linh.`;
+    }
+    if (currentMode === 'mbti') {
+        return `Bạn là chuyên gia tâm lý học. Hãy đặt các câu hỏi trắc nghiệm ngắn để xác định tính cách MBTI của người dùng. Hỏi từng câu một. Sau khoảng 10 câu, hãy đưa ra dự đoán về nhóm tính cách của họ.`;
     }
 
-    // --- STANDARD CHAT MODE (Fallback) ---
+    // --- STANDARD MODES ---
     let roleDescription = '';
     switch (role) {
         case 'teacher':
@@ -178,7 +65,6 @@ const getSystemInstruction = (role: User['aiRole'] = 'assistant', tone: User['ai
             roleDescription = 'Với vai trò là một người bạn học thân thiện và thông minh, hãy trả lời một cách gần gũi, dễ hiểu và khuyến khích.';
             break;
         case 'assistant':
-        default:
             roleDescription = 'Với vai trò là một trợ lý kỹ thuật, hãy trả lời một cách hiệu quả và đi thẳng vào vấn đề.';
             break;
     }
@@ -195,7 +81,6 @@ const getSystemInstruction = (role: User['aiRole'] = 'assistant', tone: User['ai
             toneInstruction = 'Sử dụng giọng văn ngắn gọn, súc tích, loại bỏ những thông tin không cần thiết.';
             break;
         case 'balanced':
-        default:
             toneInstruction = 'Sử dụng giọng văn cân bằng, thân thiện và giàu thông tin.';
             break;
     }
@@ -258,8 +143,7 @@ const getSystemInstruction = (role: User['aiRole'] = 'assistant', tone: User['ai
 }
 
 const parseFlashcardsFromResponse = (text: string): { intro: string; cards: { term: string; definition: string }[] } | null => {
-    // Look for markdown table syntax
-    const tableRegex = /\|(.+)\|\r?\n\|( *[-:]+[-| :]*)\|\r?\n((?:\|.*\|\r?\n?)*)/m;
+    const tableRegex = /^\|(.+)\|\r?\n\|( *[-:]+[-| :]*)\|\r?\n((?:\|.*\|\r?\n?)*)/m;
     const match = text.match(tableRegex);
   
     if (!match) return null;
@@ -270,18 +154,11 @@ const parseFlashcardsFromResponse = (text: string): { intro: string; cards: { te
     const lines = tableMarkdown.trim().split('\n');
     if (lines.length < 3) return null;
 
-    // Check header row to ensure it's likely a definition table (heuristic)
-    // We skip this check if we are in flashcard mode explicitly, but good to have some safety
-    
     const rows = lines.slice(2);
     const cards = rows.map(row => {
-      // Strip leading/trailing pipes
-      const rowContent = row.replace(/^\||\|$/g, '');
-      const columns = rowContent.split('|').map(c => c.trim());
-      
-      if (columns.length >= 2 && columns[0] && columns[1]) {
-        // Handle cases where description might contain pipes (escaped or not) - simplified here
-        return { term: columns[0], definition: columns.slice(1).join('|') }; 
+      const columns = row.split('|').map(c => c.trim()).filter(Boolean);
+      if (columns.length >= 2) {
+        return { term: columns[0], definition: columns[1] };
       }
       return null;
     }).filter((card): card is { term: string; definition: string } => card !== null);
@@ -308,35 +185,28 @@ const parseSpecialJsonBlock = (text: string, blockName: string): any | null => {
 };
 
 const parseMindMapFromResponse = (text: string): { intro: string, data: MindMapNode | null } => {
-    // Look for list items starting with - or *
-    const lines = text.split('\n').filter(line => /^\s*[-*]\s+/.test(line));
-    
+    const lines = text.split('\n').filter(line => line.trim().startsWith('-') || line.trim().startsWith('*'));
     if (lines.length === 0) {
         return { intro: text, data: null };
     }
 
-    // Extract intro (text before the first list item)
-    const firstListLineIndex = text.indexOf(lines[0]);
-    const intro = text.substring(0, firstListLineIndex).trim();
+    const firstListIndex = text.indexOf(lines[0]);
+    const intro = text.substring(0, firstListIndex).trim();
 
-    const getIndent = (line: string) => {
-        const match = line.match(/^(\s*)/);
-        return match ? match[1].length : 0;
-    };
+    const getIndent = (line: string) => line.match(/^\s*/)?.[0].length || 0;
 
     let root: MindMapNode | null = null;
     const stack: { node: MindMapNode; indent: number }[] = [];
     const topLevelNodes: MindMapNode[] = [];
 
+
     lines.forEach(line => {
         const indent = getIndent(line);
-        // Remove list marker
-        const name = line.replace(/^\s*[-*]\s+/, '').trim();
+        const name = line.trim().replace(/^[-*]\s*/, '').trim();
         if (!name) return;
 
         const newNode: MindMapNode = { name, children: [] };
 
-        // Pop stack to find parent
         while (stack.length > 0 && stack[stack.length - 1].indent >= indent) {
             stack.pop();
         }
@@ -354,14 +224,11 @@ const parseMindMapFromResponse = (text: string): { intro: string, data: MindMapN
         stack.push({ node: newNode, indent });
     });
     
-    // Wrap in a single root if multiple top-levels found or just return the single root
     if (topLevelNodes.length === 1) {
         root = topLevelNodes[0];
     } else if (topLevelNodes.length > 1) {
-        // Create a synthetic root based on prompt or generic name
-        const mainTopicMatch = intro.match(/sơ đồ tư duy (?:về|cho) (.+?)(?:\n|$|:)/i);
-        const rootName = mainTopicMatch ? mainTopicMatch[1].trim() : 'Chủ đề chính';
-        root = { name: rootName, children: topLevelNodes };
+        const mainTopicFromIntro = intro.split('\n').pop()?.replace(/[:.]$/, '').trim() || 'Sơ đồ tư duy';
+        root = { name: mainTopicFromIntro, children: topLevelNodes };
     }
 
     return { intro, data: root };
@@ -376,11 +243,8 @@ const mindMapToMarkdown = (node: MindMapNode, depth = 0): string => {
     return result;
 };
 
-type Part = { text: string } | { inlineData: { mimeType: string; data: string; } };
-type HistoryPart = { role: Role; parts: Part[] };
-
-const mapMessageToHistory = (m: Message): HistoryPart | null => {
-   const parts: Part[] = [];
+const mapMessageToHistory = (m: Message) => {
+   const parts: any[] = [];
    if (m.text) parts.push({ text: m.text });
    
    if (m.mindMapData) {
@@ -389,7 +253,7 @@ const mapMessageToHistory = (m: Message): HistoryPart | null => {
    }
 
    if (m.files) {
-       m.files.forEach(file => {
+       m.files.forEach((file: any) => {
            if (file.mimeType.startsWith('image/') || file.mimeType === 'application/pdf' || file.mimeType.startsWith('text/')) {
                const base64Data = file.dataUrl.split(',')[1];
                parts.push({
@@ -486,8 +350,8 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
   ];
   
   const toolsIds = ['whiteboard', 'probability', 'calculator', 'periodic_table', 'formula_notebook', 'unit_converter', 'pomodoro'];
-  const toolItems = menuItems.filter(m => toolsIds.includes(m.id));
-  const modeItems = menuItems.filter(m => !toolsIds.includes(m.id));
+  const toolItems = menuItems.filter((m: any) => toolsIds.includes(m.id));
+  const modeItems = menuItems.filter((m: any) => !toolsIds.includes(m.id));
 
   useEffect(() => {
     const savedTheme = currentUser?.theme || localStorage.getItem('kl-ai-theme') as 'light' | 'dark' || 'light';
@@ -597,9 +461,16 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
       title: title,
       messages: initialMessage 
         ? [initialMessage] 
-        : [{ role: 'model', text: getInitialMessageForMode(initialMode), mode: initialMode }],
+        : [{ role: 'model', text: "Xin chào! Tôi là KL AI. Tôi có thể giúp gì cho bạn hôm nay?", mode: initialMode }],
       isPinned: false,
     };
+    
+    if (isSpecialMode && !initialMessage) {
+         if (initialMode === 'rpg') newChat.messages = [{ role: 'model', text: "Chào mừng lữ khách! Bạn muốn phiêu lưu trong bối cảnh nào (Trung cổ, Cyberpunk, Kiếm hiệp...)?", mode: initialMode }];
+         if (initialMode === 'roast') newChat.messages = [{ role: 'model', text: "Ồ, lại thêm một kẻ muốn nghe sự thật trần trụi à? Được thôi, nói gì đi nào.", mode: initialMode }];
+         if (initialMode === 'akinator') newChat.messages = [{ role: 'model', text: "Ta là Thần đèn Akinator. Hãy nghĩ về một nhân vật và ta sẽ đoán ra. Sẵn sàng chưa?", mode: initialMode }];
+         if (initialMode === 'mbti') newChat.messages = [{ role: 'model', text: "Chào bạn. Hãy bắt đầu bài trắc nghiệm tính cách MBTI nhé. Bạn sẵn sàng chưa?", mode: initialMode }];
+    }
 
     if (initialMessage && initialMessage.role === 'user') {
         newChat.messages.push({ role: 'model', text: '', timestamp: new Date().toISOString(), mode: initialMode });
@@ -607,7 +478,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
 
     // 2. UPDATE UI IMMEDIATELY
     setChatSessions(prev => [newChat, ...prev]);
-    setActiveChatId(newId);
+    setActiveChatId(newChat.id);
     setMode(initialMode); // Explicitly set mode here to be safe
     
     setIsMobileSidebarOpen(false);
@@ -689,7 +560,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
         }
     };
     loadChats();
-  }, [currentUser.username, handleNewChat]);
+  }, [currentUser.username]);
 
   // Initialize Chat Instances (GenAI)
   useEffect(() => {
@@ -708,7 +579,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
             
             const chatHistory = session.messages
                 .map(mapMessageToHistory)
-                .filter((content): content is HistoryPart => content !== null);
+                .filter((content): content is { role: Role; parts: any[] } => content !== null);
 
             const historyWithoutWelcome = chatHistory.length > 0 && chatHistory[0].role === 'model' 
                 ? chatHistory.slice(1) 
@@ -863,7 +734,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
         role: 'user',
         text,
         timestamp: new Date().toISOString(),
-        files: files.map(file => ({
+        files: files.map((file: any) => ({
             name: file.name,
             dataUrl: `data:${file.mimeType};base64,${file.data}`,
             mimeType: file.mimeType
@@ -944,6 +815,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
             
             let messageTextToSend = text;
             let finalFiles = [...files];
+            let hasProcessedSpreadsheet = false;
 
             // Pre-process Excel files for Data Analysis
             if (mode === 'data_analysis' && files.length > 0) {
@@ -953,15 +825,56 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
                          if (csvContent) {
                              messageTextToSend += `\n\n[Dữ liệu từ file ${file.name}]:\n${csvContent}\n`;
                              // Don't send binary for spreadsheet since we sent text
-                             finalFiles = finalFiles.filter(f => f.name !== file.name);
+                             finalFiles = finalFiles.filter((f: any) => f !== file);
+                             hasProcessedSpreadsheet = true;
                          }
                      }
                  }
             }
-            
-            const parts: Part[] = [{ text: messageTextToSend }];
+
+            if (mode === 'grader') {
+                const graderPrompt = `BẠN LÀ MỘT GIÁO VIÊN CHẤM THI CHUYÊN NGHIỆP VÀ KHẮT KHE.
+Nhiệm vụ: Phân tích hình ảnh bài làm của học sinh, chấm điểm và đưa ra nhận xét chi tiết.
+
+Quy tắc chấm:
+1. Thang điểm: 10 (Có thể lẻ đến 0.25).
+2. Soi lỗi: Tìm kỹ các lỗi chính tả, lỗi tính toán, logic sai, hoặc trình bày cẩu thả.
+3. Format trả về: BẮT BUỘC dùng định dạng Markdown sau:
+
+# KẾT QUẢ CHẤM THI
+## Điểm số: [Số điểm]/10 
+(Nếu điểm < 5: 🔴, 5-7: 🟡, >8: 🟢)
+
+## ❌ Các lỗi cần sửa:
+- **[Vị trí/Dòng]**: [Mô tả lỗi sai] -> [Cách sửa đúng]
+- ...
+
+## 💡 Lời khuyên của giáo viên:
+[Nhận xét tổng quan và động viên ngắn gọn]
+
+Lưu ý: Nếu chữ quá xấu không dịch được, hãy báo cho tôi biết để chụp lại, đừng cố chấm bừa.
+
+Nội dung bài làm (nếu có ảnh, hãy xem ảnh):
+`;
+                messageTextToSend = `${graderPrompt}\n${messageTextToSend}`;
+            } else if (mode === 'chat_document') {
+                const docPrompt = `BẠN LÀ TRỢ LÝ PHÂN TÍCH TÀI LIỆU (RAG - Retrieval Augmented Generation).
+Nhiệm vụ: Trả lời câu hỏi của người dùng CHỈ DỰA TRÊN nội dung file đính kèm (PDF, Text...).
+Tuyệt đối không bịa đặt thông tin nếu không có trong tài liệu.
+Nếu thông tin không có trong file, hãy trả lời: "Thông tin này không có trong tài liệu được cung cấp."
+Hãy trích dẫn (số trang, mục) nếu có thể.
+`;
+                messageTextToSend = `${docPrompt}\n---\nCâu hỏi: ${messageTextToSend}`;
+            } else if (mode === 'data_analysis') {
+                messageTextToSend = `PHÂN TÍCH DỮ LIỆU:
+Hãy phân tích dữ liệu được cung cấp và trả lời câu hỏi.
+Nếu được yêu cầu vẽ biểu đồ, hãy trả về JSON \`chart_json\` (như hướng dẫn hệ thống).
+\n---\nYêu cầu: ${messageTextToSend}`;
+            }
+
+            const parts: any[] = [{ text: messageTextToSend }];
             if (finalFiles.length > 0) {
-                finalFiles.forEach(file => {
+                finalFiles.forEach((file: any) => {
                     parts.push({
                         inlineData: {
                             mimeType: file.mimeType,
@@ -992,69 +905,41 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
                     );
                 }
             }
-            
-            // --- Post-processing after stream is complete ---
+
+            const flashcardData = parseFlashcardsFromResponse(fullText);
+            const chartConfig = parseSpecialJsonBlock(fullText, 'chart_json');
+            const scheduleData = parseSpecialJsonBlock(fullText, 'schedule_json');
+
             setChatSessions(prev => 
                 prev.map(chat => {
                     if (chat.id !== activeChatId) return chat;
-                    
                     const newMessages = [...chat.messages];
                     const lastMsg = { ...newMessages[newMessages.length - 1] };
-                    let modifiedText = fullText;
-
-                    // --- Apply parsers for different modes ---
-                    const flashcardResult = parseFlashcardsFromResponse(fullText);
-                    if (flashcardResult) {
-                        lastMsg.flashcards = flashcardResult.cards;
-                    }
                     
-                    if (mode === 'mind_map') {
-                        const mindMapResult = parseMindMapFromResponse(fullText);
-                        if (mindMapResult.data) {
-                            lastMsg.mindMapData = mindMapResult.data;
-                        }
-                    }
-                    
-                    if (mode === 'create_file') {
-                        const fileMatch = fullText.match(/^FILENAME:\s*([^\n]+)\r?\n```[\s\S]*?\n([\s\S]+)```/m);
-                        if (fileMatch) {
-                            const fileName = fileMatch[1].trim();
-                            const fileContent = fileMatch[2];
-                            
-                            const getMimeType = (name: string): string => {
-                                const ext = name.split('.').pop()?.toLowerCase() || '';
-                                const mimeMap: Record<string, string> = {
-                                  'html': 'text/html', 'css': 'text/css', 'js': 'application/javascript',
-                                  'json': 'application/json', 'py': 'text/x-python', 'txt': 'text/plain',
-                                  'md': 'text/markdown', 'java': 'text/x-java-source', 'cpp': 'text/x-c++src',
-                                  'c': 'text/x-csrc', 'xml': 'application/xml', 'sh': 'application/x-sh'
-                                };
-                                return mimeMap[ext] || 'application/octet-stream';
-                            };
-
-                            lastMsg.fileToDownload = [{
-                                name: fileName,
-                                content: fileContent,
-                                mimeType: getMimeType(fileName)
-                            }];
-                            
-                            modifiedText = `Đã tạo file \`${fileName}\` cho bạn:\n\n` + fullText.substring(fullText.indexOf('```'));
-                        }
-                    }
-
-                    // --- Generic parsers (can run in any mode) ---
-                    const chartConfig = parseSpecialJsonBlock(fullText, 'chart_json');
+                    if (flashcardData) lastMsg.flashcards = flashcardData.cards;
                     if (chartConfig) lastMsg.chartConfig = chartConfig;
-
-                    const scheduleData = parseSpecialJsonBlock(fullText, 'schedule_json');
                     if (scheduleData) lastMsg.scheduleData = scheduleData;
 
-                    // --- Final Update ---
-                    lastMsg.text = modifiedText;
                     newMessages[newMessages.length - 1] = lastMsg;
                     return { ...chat, messages: newMessages };
                 })
             );
+            
+            if (mode === 'mind_map') {
+                const mindMapData = parseMindMapFromResponse(fullText);
+                if (mindMapData.data) {
+                     setChatSessions(prev => 
+                        prev.map(chat => {
+                            if (chat.id !== activeChatId) return chat;
+                            const newMessages = [...chat.messages];
+                            const lastMsg = { ...newMessages[newMessages.length - 1] };
+                            lastMsg.mindMapData = mindMapData.data!;
+                            newMessages[newMessages.length - 1] = lastMsg;
+                            return { ...chat, messages: newMessages };
+                        })
+                    );
+                }
+            }
         }
 
     } catch (error: any) {
@@ -1082,7 +967,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
     } finally {
         setIsLoading(false);
     }
-  }, [activeChatId, chatSessions, mode, isLoading, currentUser, demoMessageCount, handleNewChat]);
+  }, [activeChatId, chatSessions, mode, isLoading, currentUser, demoMessageCount]);
 
 
   const handleDeleteChat = async (chatId: string, e: React.MouseEvent) => {
@@ -1137,7 +1022,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
                chatSessions.forEach(session => {
                    const chatHistory = session.messages
                        .map(mapMessageToHistory)
-                       .filter((content): content is HistoryPart => content !== null);
+                       .filter((content): content is { role: Role; parts: any[] } => content !== null);
                     
                     const historyWithoutWelcome = chatHistory.length > 0 && chatHistory[0].role === 'model'
                         ? chatHistory.slice(1)
@@ -1266,7 +1151,6 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
 
   const renderSidebar = () => (
       <div className="flex flex-col h-full">
-          {/* ... sidebar header ... */}
           <div className="p-4 flex items-center justify-between border-b border-border/50">
               <div className="flex items-center gap-3">
                   <div className="w-8 h-8 rounded-full bg-brand flex items-center justify-center text-white font-bold shadow-lg overflow-hidden">
@@ -1286,7 +1170,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
               </button>
           </div>
           
-          {/* PWA Install Button */}
+          {/* PWA Install Button - Always visible unless installed */}
           {!isStandalone && (
             <div className="px-3 mt-3">
                 <button 
@@ -1419,7 +1303,6 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
       )}
 
       <main className="flex-1 flex flex-col h-full relative min-w-0">
-        {/* ... Header ... */}
         <header className="h-16 flex items-center justify-between px-4 border-b border-border bg-card/80 backdrop-blur-md z-10 sticky top-0">
             <div className="flex items-center gap-3 overflow-hidden">
                 <button onClick={() => setIsMobileSidebarOpen(true)} className="md:hidden p-2 -ml-2 rounded-lg hover:bg-sidebar text-text-secondary">
@@ -1491,24 +1374,24 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
                       {/* Desktop Menu (Dropdown) */}
                       {isFeaturesPopoverOpen && (
                           <div className="hidden sm:flex absolute z-50 bg-card border border-border shadow-xl p-2 animate-slide-in-up bottom-auto top-full left-auto right-0 mt-2 w-64 rounded-xl flex-col gap-1 max-h-[60vh] overflow-y-auto origin-top-right scrollbar-thin scrollbar-thumb-border">
-                              {menuItems.map(item => (
+                              {menuItems.map((m: any) => (
                                   <button
-                                      key={item.id}
+                                      key={m.id}
                                       onClick={() => { 
-                                          if (item.action) {
-                                              item.action();
+                                          if (m.action) {
+                                              m.action();
                                           } else {
-                                              handleNewChat(item.id as Mode);
+                                              handleNewChat(m.id as Mode);
                                           }
                                           setIsFeaturesPopoverOpen(false); 
                                       }}
                                       className={`
                                           w-full flex items-center gap-3 px-3 py-2.5 text-sm font-medium rounded-lg transition-colors justify-start flex-shrink-0
-                                          ${mode === item.id && !item.action ? 'bg-brand text-white shadow-md' : 'text-text-secondary hover:bg-sidebar hover:text-text-primary bg-transparent'}
+                                          ${mode === m.id && !m.action ? 'bg-brand text-white shadow-md' : 'text-text-secondary hover:bg-sidebar hover:text-text-primary bg-transparent'}
                                       `}
                                   >
-                                      <div className="flex-shrink-0">{item.icon}</div>
-                                      <span className="truncate">{item.label}</span>
+                                      <div className="flex-shrink-0">{m.icon}</div>
+                                      <span className="truncate">{m.label}</span>
                                   </button>
                               ))}
                           </div>
@@ -1553,24 +1436,24 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
                       <div>
                           <h4 className="text-xs font-bold text-text-secondary uppercase mb-3 px-1 border-b border-border pb-1">Chế độ chính</h4>
                           <div className="grid grid-cols-2 gap-3">
-                            {modeItems.map(item => (
+                            {modeItems.map((m: any) => (
                                 <button
-                                    key={item.id}
+                                    key={m.id}
                                     onClick={(e) => {
                                         e.preventDefault();
                                         e.stopPropagation();
-                                        handleNewChat(item.id as Mode);
+                                        handleNewChat(m.id as Mode);
                                     }}
                                     className={`flex flex-col items-center justify-center gap-2 p-4 rounded-xl border transition-all active:scale-95
-                                        ${mode === item.id 
+                                        ${mode === m.id 
                                             ? 'bg-brand/10 border-brand text-brand font-semibold shadow-sm' 
                                             : 'bg-input-bg border-transparent hover:bg-sidebar text-text-secondary'}
                                     `}
                                 >
-                                    <div className={`p-2 rounded-full ${mode === item.id ? 'bg-brand text-white' : 'bg-card text-current'}`}>
-                                        {item.icon}
+                                    <div className={`p-2 rounded-full ${mode === m.id ? 'bg-brand text-white' : 'bg-card text-current'}`}>
+                                        {m.icon}
                                     </div>
-                                    <span className="text-sm truncate w-full text-center">{item.label}</span>
+                                    <span className="text-sm truncate w-full text-center">{m.label}</span>
                                 </button>
                             ))}
                           </div>
@@ -1579,20 +1462,20 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
                       <div>
                           <h4 className="text-xs font-bold text-text-secondary uppercase mb-3 px-1 border-b border-border pb-1">Công cụ học tập</h4>
                           <div className="grid grid-cols-2 gap-3">
-                             {toolItems.map(item => (
+                             {toolItems.map((m: any) => (
                                 <button
-                                    key={item.id}
+                                    key={m.id}
                                     onClick={(e) => {
                                         e.preventDefault();
                                         e.stopPropagation();
-                                        if (item.action) item.action();
+                                        if (m.action) m.action();
                                     }}
                                     className="flex flex-col items-center justify-center gap-2 p-4 rounded-xl bg-input-bg hover:bg-sidebar border border-transparent text-text-secondary transition-all active:scale-95"
                                 >
                                     <div className="p-2 rounded-full bg-card text-current">
-                                        {item.icon}
+                                        {m.icon}
                                     </div>
-                                    <span className="text-sm truncate w-full text-center">{item.label}</span>
+                                    <span className="text-sm truncate w-full text-center">{m.label}</span>
                                 </button>
                              ))}
                           </div>
@@ -1743,7 +1626,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
       {isBreathingOpen && <React.Suspense fallback={null}><BreathingExercise onClose={() => setIsBreathingOpen(false)} /></React.Suspense>}
       {isTarotOpen && <React.Suspense fallback={null}><TarotReader onClose={() => setIsTarotOpen(false)} onReadingRequest={handleTarotReading} /></React.Suspense>}
 
-      {/* ... Install and Demo Modals (unchanged) ... */}
+      {/* INSTALL INSTRUCTION MODAL (New) */}
       {showInstallInstructions && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-message-pop-in">
               <div className="bg-card rounded-2xl shadow-2xl max-w-sm w-full p-6 border border-border text-center relative">
@@ -1800,6 +1683,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
           </div>
       )}
 
+      {/* Demo Limit Modal */}
       {showDemoLimitModal && (
             <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
                 <div className="bg-card rounded-2xl shadow-2xl max-w-md w-full p-6 border border-border animate-message-pop-in">
@@ -1826,6 +1710,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
             </div>
         )}
 
+      {/* Login Prompt Modal */}
       {showLoginPromptModal && (
             <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
                 <div className="bg-card rounded-2xl shadow-2xl max-w-md w-full p-6 border border-border animate-message-pop-in">

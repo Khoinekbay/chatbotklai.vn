@@ -29,11 +29,6 @@ export interface D3Node extends MindMapNode {
   link?: string;
 }
 
-interface D3Link {
-    source: D3Node;
-    target: D3Node;
-}
-
 export interface MindMapViewHandles {
   zoomIn: () => void;
   zoomOut: () => void;
@@ -240,7 +235,7 @@ const MindMapView = React.forwardRef<MindMapViewHandles, MindMapViewProps>(({ da
     const { width, height } = dimensions;
 
     const treeLayout = d3.layout.tree().nodeSize([100, 40]);
-    const diagonalGenerator = d3.svg.diagonal().projection((d: D3Node) => [d.y, d.x]);
+    const diagonalGenerator = d3.svg.diagonal().projection((d: any) => [d.y, d.x]);
     
     const svgSelection = d3.select(svgRef.current);
 
@@ -302,7 +297,7 @@ const MindMapView = React.forwardRef<MindMapViewHandles, MindMapViewProps>(({ da
         const node = containerG.selectAll("g.node").data(nodes, (d: D3Node) => d.id);
 
         const nodeEnter = node.enter().append("g")
-            .attr("class", (d: D3Node) => `node node-id-${d.id}`)
+            .attr("class", d => `node node-id-${d.id}`)
             .attr("transform", () => `translate(${sourceNode.y0 || sourceNode.y},${sourceNode.x0 || sourceNode.x})`)
             .on("click", function(d: D3Node) {
                 if (d3.event.defaultPrevented) return;
@@ -404,7 +399,7 @@ const MindMapView = React.forwardRef<MindMapViewHandles, MindMapViewProps>(({ da
         node.exit().transition().duration(duration)
             .attr("transform", () => `translate(${sourceNode.y},${sourceNode.x})`).remove();
 
-        const link = containerG.selectAll("path.link").data(links, (d: D3Link) => d.target.id);
+        const link = containerG.selectAll("path.link").data(links, (d: any) => d.target.id);
         
         link.enter().insert("path", "g")
             .attr("class", "link")
@@ -413,11 +408,11 @@ const MindMapView = React.forwardRef<MindMapViewHandles, MindMapViewProps>(({ da
                 return diagonalGenerator({ source: o, target: o });
             })
             .style({ fill: "none", "stroke-width": "2px" })
-            .style("stroke", (d: D3Link) => d.target.color || "var(--border)");
+            .style("stroke", (d: any) => d.target.color || "var(--border)");
 
         link.transition().duration(duration)
             .attr("d", diagonalGenerator)
-            .style("stroke", (d: D3Link) => d.target.color || "var(--border)");
+            .style("stroke", (d: any) => d.target.color || "var(--border)");
 
         link.exit().transition().duration(duration)
             .attr("d", () => {
@@ -535,7 +530,7 @@ const MindMapView = React.forwardRef<MindMapViewHandles, MindMapViewProps>(({ da
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedNodeIds, internalData, editingNodeId, isPanMode, onToggleNodeSelection, ref]);
+  }, [selectedNodeIds, internalData, editingNodeId, isPanMode, onToggleNodeSelection]);
 
   useEffect(() => {
     if (editingNodeId === null || !svgRef.current) return;
@@ -604,7 +599,7 @@ const MindMapView = React.forwardRef<MindMapViewHandles, MindMapViewProps>(({ da
         sel.removeAllRanges();
         sel.addRange(range);
     }
-  }, [editingNodeId, onToggleNodeSelection, ref]);
+  }, [editingNodeId, onToggleNodeSelection]);
 
   const handleAction = (action: (tree: D3Node) => D3Node | void) => {
     if (!internalData) return;

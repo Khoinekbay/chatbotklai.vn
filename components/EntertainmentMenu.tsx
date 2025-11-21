@@ -1,5 +1,4 @@
 
-
 import React from 'react';
 import { GamepadIcon, TarotIcon, WindIcon, FireIcon, GenieIcon, PuzzleIcon } from './Icons';
 import { Mode } from '../types';

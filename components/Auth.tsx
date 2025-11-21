@@ -1,5 +1,4 @@
 
-
 import React, { useState, useEffect, useRef } from 'react';
 import { KlAiLogo } from './Icons';
 import { type User } from '../types';

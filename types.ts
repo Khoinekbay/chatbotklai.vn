@@ -1,5 +1,4 @@
 
-
 export type Role = 'user' | 'model';
 
 export type Mode = 'chat' | 'create_exam' | 'solve_exam' | 'create_schedule' | 'learn' | 'exam' | 'theory' | 'flashcard' | 'scramble_exam' | 'similar_exam' | 'create_file' | 'mind_map' | 'generate_image' | 'grader' | 'chat_document' | 'data_analysis' | 'rpg' | 'roast' | 'akinator' | 'tarot' | 'mbti';
@@ -12,20 +11,6 @@ export interface MindMapNode {
   color?: string;
   image?: string;
   link?: string;
-}
-
-// Basic type for Chart.js configuration
-export interface ChartConfig {
-  type: 'bar' | 'line' | 'pie' | 'doughnut' | 'radar' | 'polarArea' | 'scatter';
-  data: {
-    labels: string[];
-    datasets: {
-      label: string;
-      data: number[];
-      [key: string]: any; // Allow other dataset properties
-    }[];
-  };
-  options?: any;
 }
 
 
@@ -45,7 +30,7 @@ export interface Message {
     mimeType: string;
   }[];
   mindMapData?: MindMapNode;
-  chartConfig?: ChartConfig; // Changed from any
+  chartConfig?: any; // JSON config for Chart.js
   scheduleData?: {
     title: string;
     startTime: string;
