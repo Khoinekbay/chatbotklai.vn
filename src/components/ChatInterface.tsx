@@ -376,8 +376,11 @@ const mindMapToMarkdown = (node: MindMapNode, depth = 0): string => {
     return result;
 };
 
-const mapMessageToHistory = (m: Message) => {
-   const parts: any[] = [];
+type Part = { text: string } | { inlineData: { mimeType: string; data: string; } };
+type HistoryPart = { role: Role; parts: Part[] };
+
+const mapMessageToHistory = (m: Message): HistoryPart | null => {
+   const parts: Part[] = [];
    if (m.text) parts.push({ text: m.text });
    
    if (m.mindMapData) {
@@ -386,7 +389,7 @@ const mapMessageToHistory = (m: Message) => {
    }
 
    if (m.files) {
-       m.files.forEach((file: any) => {
+       m.files.forEach(file => {
            if (file.mimeType.startsWith('image/') || file.mimeType === 'application/pdf' || file.mimeType.startsWith('text/')) {
                const base64Data = file.dataUrl.split(',')[1];
                parts.push({
@@ -483,8 +486,8 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
   ];
   
   const toolsIds = ['whiteboard', 'probability', 'calculator', 'periodic_table', 'formula_notebook', 'unit_converter', 'pomodoro'];
-  const toolItems = menuItems.filter((m: any) => toolsIds.includes(m.id));
-  const modeItems = menuItems.filter((m: any) => !toolsIds.includes(m.id));
+  const toolItems = menuItems.filter(m => toolsIds.includes(m.id));
+  const modeItems = menuItems.filter(m => !toolsIds.includes(m.id));
 
   useEffect(() => {
     const savedTheme = currentUser?.theme || localStorage.getItem('kl-ai-theme') as 'light' | 'dark' || 'light';
@@ -705,7 +708,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
             
             const chatHistory = session.messages
                 .map(mapMessageToHistory)
-                .filter((content): content is { role: Role; parts: any[] } => content !== null);
+                .filter((content): content is HistoryPart => content !== null);
 
             const historyWithoutWelcome = chatHistory.length > 0 && chatHistory[0].role === 'model' 
                 ? chatHistory.slice(1) 
@@ -956,8 +959,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
                  }
             }
             
-            // FIX: The type for `parts` was incorrect. It should be an array of a union of part types.
-            const parts: ({ text: string } | { inlineData: { mimeType: string, data: string } })[] = [{ text: messageTextToSend }];
+            const parts: Part[] = [{ text: messageTextToSend }];
             if (finalFiles.length > 0) {
                 finalFiles.forEach(file => {
                     parts.push({
@@ -1080,7 +1082,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
     } finally {
         setIsLoading(false);
     }
-  }, [activeChatId, chatSessions, mode, isLoading, currentUser, demoMessageCount]);
+  }, [activeChatId, chatSessions, mode, isLoading, currentUser, demoMessageCount, handleNewChat]);
 
 
   const handleDeleteChat = async (chatId: string, e: React.MouseEvent) => {
@@ -1135,7 +1137,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
                chatSessions.forEach(session => {
                    const chatHistory = session.messages
                        .map(mapMessageToHistory)
-                       .filter((content): content is { role: Role; parts: any[] } => content !== null);
+                       .filter((content): content is HistoryPart => content !== null);
                     
                     const historyWithoutWelcome = chatHistory.length > 0 && chatHistory[0].role === 'model'
                         ? chatHistory.slice(1)
@@ -1489,24 +1491,24 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
                       {/* Desktop Menu (Dropdown) */}
                       {isFeaturesPopoverOpen && (
                           <div className="hidden sm:flex absolute z-50 bg-card border border-border shadow-xl p-2 animate-slide-in-up bottom-auto top-full left-auto right-0 mt-2 w-64 rounded-xl flex-col gap-1 max-h-[60vh] overflow-y-auto origin-top-right scrollbar-thin scrollbar-thumb-border">
-                              {menuItems.map((m: any) => (
+                              {menuItems.map(item => (
                                   <button
-                                      key={m.id}
+                                      key={item.id}
                                       onClick={() => { 
-                                          if (m.action) {
-                                              m.action();
+                                          if (item.action) {
+                                              item.action();
                                           } else {
-                                              handleNewChat(m.id as Mode);
+                                              handleNewChat(item.id as Mode);
                                           }
                                           setIsFeaturesPopoverOpen(false); 
                                       }}
                                       className={`
                                           w-full flex items-center gap-3 px-3 py-2.5 text-sm font-medium rounded-lg transition-colors justify-start flex-shrink-0
-                                          ${mode === m.id && !m.action ? 'bg-brand text-white shadow-md' : 'text-text-secondary hover:bg-sidebar hover:text-text-primary bg-transparent'}
+                                          ${mode === item.id && !item.action ? 'bg-brand text-white shadow-md' : 'text-text-secondary hover:bg-sidebar hover:text-text-primary bg-transparent'}
                                       `}
                                   >
-                                      <div className="flex-shrink-0">{m.icon}</div>
-                                      <span className="truncate">{m.label}</span>
+                                      <div className="flex-shrink-0">{item.icon}</div>
+                                      <span className="truncate">{item.label}</span>
                                   </button>
                               ))}
                           </div>
@@ -1551,24 +1553,24 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
                       <div>
                           <h4 className="text-xs font-bold text-text-secondary uppercase mb-3 px-1 border-b border-border pb-1">Chế độ chính</h4>
                           <div className="grid grid-cols-2 gap-3">
-                            {modeItems.map((m: any) => (
+                            {modeItems.map(item => (
                                 <button
-                                    key={m.id}
+                                    key={item.id}
                                     onClick={(e) => {
                                         e.preventDefault();
                                         e.stopPropagation();
-                                        handleNewChat(m.id as Mode);
+                                        handleNewChat(item.id as Mode);
                                     }}
                                     className={`flex flex-col items-center justify-center gap-2 p-4 rounded-xl border transition-all active:scale-95
-                                        ${mode === m.id 
+                                        ${mode === item.id 
                                             ? 'bg-brand/10 border-brand text-brand font-semibold shadow-sm' 
                                             : 'bg-input-bg border-transparent hover:bg-sidebar text-text-secondary'}
                                     `}
                                 >
-                                    <div className={`p-2 rounded-full ${mode === m.id ? 'bg-brand text-white' : 'bg-card text-current'}`}>
-                                        {m.icon}
+                                    <div className={`p-2 rounded-full ${mode === item.id ? 'bg-brand text-white' : 'bg-card text-current'}`}>
+                                        {item.icon}
                                     </div>
-                                    <span className="text-sm truncate w-full text-center">{m.label}</span>
+                                    <span className="text-sm truncate w-full text-center">{item.label}</span>
                                 </button>
                             ))}
                           </div>
@@ -1577,20 +1579,20 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
                       <div>
                           <h4 className="text-xs font-bold text-text-secondary uppercase mb-3 px-1 border-b border-border pb-1">Công cụ học tập</h4>
                           <div className="grid grid-cols-2 gap-3">
-                             {toolItems.map((m: any) => (
+                             {toolItems.map(item => (
                                 <button
-                                    key={m.id}
+                                    key={item.id}
                                     onClick={(e) => {
                                         e.preventDefault();
                                         e.stopPropagation();
-                                        if (m.action) m.action();
+                                        if (item.action) item.action();
                                     }}
                                     className="flex flex-col items-center justify-center gap-2 p-4 rounded-xl bg-input-bg hover:bg-sidebar border border-transparent text-text-secondary transition-all active:scale-95"
                                 >
                                     <div className="p-2 rounded-full bg-card text-current">
-                                        {m.icon}
+                                        {item.icon}
                                     </div>
-                                    <span className="text-sm truncate w-full text-center">{m.label}</span>
+                                    <span className="text-sm truncate w-full text-center">{item.label}</span>
                                 </button>
                              ))}
                           </div>

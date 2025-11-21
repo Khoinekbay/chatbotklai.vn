@@ -240,7 +240,7 @@ const MindMapView = React.forwardRef<MindMapViewHandles, MindMapViewProps>(({ da
     const { width, height } = dimensions;
 
     const treeLayout = d3.layout.tree().nodeSize([100, 40]);
-    const diagonalGenerator = d3.svg.diagonal().projection((d: any) => [d.y, d.x]);
+    const diagonalGenerator = d3.svg.diagonal().projection((d: D3Node) => [d.y, d.x]);
     
     const svgSelection = d3.select(svgRef.current);
 
@@ -535,7 +535,7 @@ const MindMapView = React.forwardRef<MindMapViewHandles, MindMapViewProps>(({ da
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedNodeIds, internalData, editingNodeId, isPanMode, onToggleNodeSelection]);
+  }, [selectedNodeIds, internalData, editingNodeId, isPanMode, onToggleNodeSelection, ref]);
 
   useEffect(() => {
     if (editingNodeId === null || !svgRef.current) return;
@@ -604,7 +604,7 @@ const MindMapView = React.forwardRef<MindMapViewHandles, MindMapViewProps>(({ da
         sel.removeAllRanges();
         sel.addRange(range);
     }
-  }, [editingNodeId, onToggleNodeSelection]);
+  }, [editingNodeId, onToggleNodeSelection, ref]);
 
   const handleAction = (action: (tree: D3Node) => D3Node | void) => {
     if (!internalData) return;

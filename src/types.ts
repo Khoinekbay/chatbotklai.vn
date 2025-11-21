@@ -13,6 +13,20 @@ export interface MindMapNode {
   link?: string;
 }
 
+// Basic type for Chart.js configuration
+export interface ChartConfig {
+  type: 'bar' | 'line' | 'pie' | 'doughnut' | 'radar' | 'polarArea' | 'scatter';
+  data: {
+    labels: string[];
+    datasets: {
+      label: string;
+      data: number[];
+      [key: string]: any; // Allow other dataset properties
+    }[];
+  };
+  options?: any;
+}
+
 
 export interface Message {
   role: Role;
@@ -30,7 +44,7 @@ export interface Message {
     mimeType: string;
   }[];
   mindMapData?: MindMapNode;
-  chartConfig?: any; // JSON config for Chart.js
+  chartConfig?: ChartConfig; // Changed from any
   scheduleData?: {
     title: string;
     startTime: string;

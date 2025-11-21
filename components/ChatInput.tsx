@@ -1,6 +1,5 @@
 
 
-
 import React, { useState, useRef, useEffect } from 'react';
 import { SendIcon, AttachmentIcon, XIcon, MicrophoneIcon, FileIcon, ScanIcon } from './Icons';
 

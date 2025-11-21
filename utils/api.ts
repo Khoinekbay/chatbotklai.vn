@@ -368,7 +368,7 @@ export const api = {
       if (supabase) {
           const { data: { user } } = await supabase.auth.getUser();
           if (user) {
-              const dbUpdates: { [key: string]: any } = {};
+              const dbUpdates: any = {};
               if (updates.aiRole) dbUpdates.ai_role = updates.aiRole;
               if (updates.aiTone) dbUpdates.ai_tone = updates.aiTone;
               if (updates.theme) dbUpdates.theme = updates.theme;
