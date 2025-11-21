@@ -2,11 +2,11 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { GoogleGenAI, Chat } from '@google/genai';
-import { type Message, type ChatSession, type User, type MindMapNode, type Mode, type FollowUpAction, type Role } from '../types';
+import { type Message, type ChatSession, type User, type MindMapNode, type Mode, type FollowUpAction } from '../types';
 import ChatMessage from './ChatMessage';
 import ChatInput from './ChatInput';
 import TypingIndicator from './TypingIndicator';
-import { CreateExamIcon, SolveExamIcon, CreateScheduleIcon, NewChatIcon, KlAiLogo, UserIcon, LogoutIcon, EditIcon, SearchIcon, PinIcon, LearnModeIcon, ExamModeIcon, DownloadIcon, SunIcon, MoonIcon, TheoryModeIcon, MenuIcon, FeaturesIcon, FlashcardIcon, ShuffleIcon, CloneIcon, CalculatorIcon, PeriodicTableIcon, MinimizeIcon, MaximizeIcon, RestoreIcon, CreateFileIcon, MindMapIcon, TrashIcon, SettingsIcon, MoreHorizontalIcon, KeyIcon, MagicIcon, PresentationIcon, GraderIcon, DocumentSearchIcon, TimerIcon, ChartIcon, LockIcon, ScaleIcon, DiceIcon, NotebookIcon, GamepadIcon, XIcon, DownloadAppIcon, ShareIOSIcon } from './Icons';
+import { CreateExamIcon, SolveExamIcon, CreateScheduleIcon, NewChatIcon, KlAiLogo, UserIcon, LogoutIcon, EditIcon, SearchIcon, PinIcon, LearnModeIcon, ExamModeIcon, DownloadIcon, SunIcon, MoonIcon, TheoryModeIcon, MenuIcon, FeaturesIcon, FlashcardIcon, ShuffleIcon, CloneIcon, CalculatorIcon, PeriodicTableIcon, MinimizeIcon, MaximizeIcon, RestoreIcon, CreateFileIcon, MindMapIcon, TrashIcon, SettingsIcon, MoreHorizontalIcon, KeyIcon, MagicIcon, PresentationIcon, GraderIcon, DocumentSearchIcon, TimerIcon, ChartIcon, LockIcon, ScaleIcon, DiceIcon, NotebookIcon, GamepadIcon, XIcon } from './Icons';
 import { api } from '../utils/api';
 
 // Lazy load heavy components
@@ -238,7 +238,7 @@ const mindMapToMarkdown = (node: MindMapNode, depth = 0): string => {
     const indent = '  '.repeat(depth);
     let result = `${indent}- ${node.name}\n`;
     if (node.children) {
-        result += node.children.map((child: MindMapNode) => mindMapToMarkdown(child, depth + 1)).join('');
+        result += node.children.map(child => mindMapToMarkdown(child, depth + 1)).join('');
     }
     return result;
 };
@@ -253,7 +253,7 @@ const mapMessageToHistory = (m: Message) => {
    }
 
    if (m.files) {
-       m.files.forEach((file: any) => {
+       m.files.forEach(file => {
            if (file.mimeType.startsWith('image/') || file.mimeType === 'application/pdf' || file.mimeType.startsWith('text/')) {
                const base64Data = file.dataUrl.split(',')[1];
                parts.push({
@@ -308,18 +308,13 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
   const [showDemoLimitModal, setShowDemoLimitModal] = useState(false);
   const [showLoginPromptModal, setShowLoginPromptModal] = useState(false);
 
-  // PWA Install Prompt
-  const [installPrompt, setInstallPrompt] = useState<any>(null);
-  const [showInstallInstructions, setShowInstallInstructions] = useState(false);
-  const [isStandalone, setIsStandalone] = useState(false);
-  const [isIOS, setIsIOS] = useState(false);
 
   const chatInstances = useRef<{ [key: string]: Chat }>({});
   const chatContainerRef = useRef<HTMLDivElement>(null);
   const featuresPopoverRef = useRef<HTMLDivElement>(null);
-  const featuresButtonRef = useRef<HTMLButtonElement>(null);
+  const featuresButtonRef = useRef<HTMLDivElement>(null);
   const entertainmentPopoverRef = useRef<HTMLDivElement>(null);
-  const entertainmentButtonRef = useRef<HTMLButtonElement>(null);
+  const entertainmentButtonRef = useRef<HTMLDivElement>(null);
 
   const menuItems = [
       { id: 'chat', label: 'Trò chuyện', icon: <UserIcon className="w-5 h-5" /> },
@@ -350,8 +345,8 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
   ];
   
   const toolsIds = ['whiteboard', 'probability', 'calculator', 'periodic_table', 'formula_notebook', 'unit_converter', 'pomodoro'];
-  const toolItems = menuItems.filter((m: any) => toolsIds.includes(m.id));
-  const modeItems = menuItems.filter((m: any) => !toolsIds.includes(m.id));
+  const toolItems = menuItems.filter(m => toolsIds.includes(m.id));
+  const modeItems = menuItems.filter(m => !toolsIds.includes(m.id));
 
   useEffect(() => {
     const savedTheme = currentUser?.theme || localStorage.getItem('kl-ai-theme') as 'light' | 'dark' || 'light';
@@ -375,42 +370,6 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
         }
     }
   }, [currentUser]);
-  
-  // PWA Install Listener
-  useEffect(() => {
-      const handleBeforeInstallPrompt = (e: any) => {
-          e.preventDefault();
-          setInstallPrompt(e);
-      };
-      
-      window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
-      
-      // Check iOS
-      const iOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
-      setIsIOS(iOS);
-
-      // Check Standalone
-      const isStandaloneMode = window.matchMedia('(display-mode: standalone)').matches || (window.navigator as any).standalone === true;
-      setIsStandalone(isStandaloneMode);
-
-      return () => {
-          window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
-      };
-  }, []);
-
-  const handleInstallClick = () => {
-      if (installPrompt) {
-          installPrompt.prompt();
-          installPrompt.userChoice.then((choiceResult: any) => {
-              if (choiceResult.outcome === 'accepted') {
-                  setInstallPrompt(null);
-              }
-          });
-      } else {
-          // Fallback logic for iOS or desktop
-          setShowInstallInstructions(true);
-      }
-  };
 
   useEffect(() => {
     if (currentUser?.backgroundUrl) {
@@ -579,7 +538,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
             
             const chatHistory = session.messages
                 .map(mapMessageToHistory)
-                .filter((content): content is { role: Role; parts: any[] } => content !== null);
+                .filter((content): content is { role: string; parts: any[] } => content !== null);
 
             const historyWithoutWelcome = chatHistory.length > 0 && chatHistory[0].role === 'model' 
                 ? chatHistory.slice(1) 
@@ -661,7 +620,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
   }, []);
 
 
-  const handleExtractText = useCallback(async (file: { data: string; mimeType: string }): Promise<string | null> => {
+  const handleExtractText = useCallback(async (file: { data: string; mimeType: string }) => {
     try {
         const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
         const response = await ai.models.generateContent({
@@ -673,7 +632,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
                 ]
             }
         });
-        return response.text || null;
+        return response.text;
     } catch (error) {
         console.error("OCR failed:", error);
         return null;
@@ -734,7 +693,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
         role: 'user',
         text,
         timestamp: new Date().toISOString(),
-        files: files.map((file: any) => ({
+        files: files.map(file => ({
             name: file.name,
             dataUrl: `data:${file.mimeType};base64,${file.data}`,
             mimeType: file.mimeType
@@ -764,7 +723,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
             try {
                 const titleGenPrompt = `Dựa vào yêu cầu đầu tiên này: "${promptText}", hãy tạo một tiêu đề ngắn gọn (tối đa 5 từ) bằng tiếng Việt cho cuộc trò chuyện. Chỉ trả về tiêu đề.`;
                 const titleResponse = await ai.models.generateContent({ model: MODEL_NAME, contents: titleGenPrompt });
-                let newTitle = (titleResponse.text || '').trim().replace(/^"|"$/g, '');
+                let newTitle = titleResponse.text.trim().replace(/^"|"$/g, '');
                 if (newTitle) {
                     setChatSessions(prev =>
                         prev.map(chat => chat.id === activeChatId ? { ...chat, title: newTitle } : chat)
@@ -825,7 +784,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
                          if (csvContent) {
                              messageTextToSend += `\n\n[Dữ liệu từ file ${file.name}]:\n${csvContent}\n`;
                              // Don't send binary for spreadsheet since we sent text
-                             finalFiles = finalFiles.filter((f: any) => f !== file);
+                             finalFiles = finalFiles.filter(f => f !== file);
                              hasProcessedSpreadsheet = true;
                          }
                      }
@@ -874,7 +833,7 @@ Nếu được yêu cầu vẽ biểu đồ, hãy trả về JSON \`chart_json\`
 
             const parts: any[] = [{ text: messageTextToSend }];
             if (finalFiles.length > 0) {
-                finalFiles.forEach((file: any) => {
+                finalFiles.forEach(file => {
                     parts.push({
                         inlineData: {
                             mimeType: file.mimeType,
@@ -1022,7 +981,7 @@ Nếu được yêu cầu vẽ biểu đồ, hãy trả về JSON \`chart_json\`
                chatSessions.forEach(session => {
                    const chatHistory = session.messages
                        .map(mapMessageToHistory)
-                       .filter((content): content is { role: Role; parts: any[] } => content !== null);
+                       .filter((content): content is { role: string; parts: any[] } => content !== null);
                     
                     const historyWithoutWelcome = chatHistory.length > 0 && chatHistory[0].role === 'model'
                         ? chatHistory.slice(1)
@@ -1170,21 +1129,8 @@ Nếu được yêu cầu vẽ biểu đồ, hãy trả về JSON \`chart_json\`
               </button>
           </div>
           
-          {/* PWA Install Button - Always visible unless installed */}
-          {!isStandalone && (
-            <div className="px-3 mt-3">
-                <button 
-                    onClick={handleInstallClick}
-                    className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-500 to-purple-600 text-white rounded-lg shadow-lg active:scale-95 transition-all animate-pulse"
-                >
-                    <DownloadAppIcon className="w-5 h-5" />
-                    <span className="font-bold text-sm">Tải App Về</span>
-                </button>
-            </div>
-          )}
-
           {currentUser.isDemo && (
-            <div className="px-4 py-2 bg-yellow-500/10 border-b border-yellow-500/20 mt-2">
+            <div className="px-4 py-2 bg-yellow-500/10 border-b border-yellow-500/20">
                 <div className="flex justify-between text-xs font-medium text-yellow-600 dark:text-yellow-500 mb-1">
                     <span>Dùng thử miễn phí</span>
                     <span>{DEMO_MESSAGE_LIMIT - demoMessageCount}/{DEMO_MESSAGE_LIMIT}</span>
@@ -1374,7 +1320,7 @@ Nếu được yêu cầu vẽ biểu đồ, hãy trả về JSON \`chart_json\`
                       {/* Desktop Menu (Dropdown) */}
                       {isFeaturesPopoverOpen && (
                           <div className="hidden sm:flex absolute z-50 bg-card border border-border shadow-xl p-2 animate-slide-in-up bottom-auto top-full left-auto right-0 mt-2 w-64 rounded-xl flex-col gap-1 max-h-[60vh] overflow-y-auto origin-top-right scrollbar-thin scrollbar-thumb-border">
-                              {menuItems.map((m: any) => (
+                              {menuItems.map((m) => (
                                   <button
                                       key={m.id}
                                       onClick={() => { 
@@ -1417,31 +1363,16 @@ Nếu được yêu cầu vẽ biểu đồ, hãy trả về JSON \`chart_json\`
                    </div>
                    
                    <div className="overflow-y-auto pb-8 space-y-6">
-                      {/* Persistent Install Button in Mobile Menu */}
-                      {!isStandalone && (
-                        <div className="bg-gradient-to-r from-blue-500 to-purple-600 rounded-xl p-4 text-white shadow-lg">
-                            <div className="flex items-center justify-between mb-2">
-                                <h4 className="font-bold flex items-center gap-2"><DownloadAppIcon className="w-5 h-5" /> Cài đặt Ứng dụng</h4>
-                            </div>
-                            <p className="text-xs opacity-90 mb-3">Trải nghiệm KL AI tốt hơn, mượt mà hơn ngay trên điện thoại của bạn.</p>
-                            <button 
-                                onClick={handleInstallClick}
-                                className="w-full py-2 bg-white text-blue-600 font-bold rounded-lg text-sm hover:bg-gray-100 transition-colors active:scale-95"
-                            >
-                                {installPrompt ? "Cài đặt ngay" : "Hướng dẫn cài đặt"}
-                            </button>
-                        </div>
-                      )}
-
                       <div>
                           <h4 className="text-xs font-bold text-text-secondary uppercase mb-3 px-1 border-b border-border pb-1">Chế độ chính</h4>
                           <div className="grid grid-cols-2 gap-3">
-                            {modeItems.map((m: any) => (
+                            {modeItems.map(m => (
                                 <button
                                     key={m.id}
                                     onClick={(e) => {
                                         e.preventDefault();
                                         e.stopPropagation();
+                                        // DO NOT CLOSE MENU - User closes manually with Red X
                                         handleNewChat(m.id as Mode);
                                     }}
                                     className={`flex flex-col items-center justify-center gap-2 p-4 rounded-xl border transition-all active:scale-95
@@ -1462,12 +1393,13 @@ Nếu được yêu cầu vẽ biểu đồ, hãy trả về JSON \`chart_json\`
                       <div>
                           <h4 className="text-xs font-bold text-text-secondary uppercase mb-3 px-1 border-b border-border pb-1">Công cụ học tập</h4>
                           <div className="grid grid-cols-2 gap-3">
-                             {toolItems.map((m: any) => (
+                             {toolItems.map(m => (
                                 <button
                                     key={m.id}
                                     onClick={(e) => {
                                         e.preventDefault();
                                         e.stopPropagation();
+                                        // Tools open modals, so we keep menu open or close? User asked to keep open.
                                         if (m.action) m.action();
                                     }}
                                     className="flex flex-col items-center justify-center gap-2 p-4 rounded-xl bg-input-bg hover:bg-sidebar border border-transparent text-text-secondary transition-all active:scale-95"
@@ -1522,7 +1454,7 @@ Nếu được yêu cầu vẽ biểu đồ, hãy trả về JSON \`chart_json\`
                         message={msg} 
                         isLastMessage={idx === activeChat.messages.length - 1}
                         isLoading={isLoading}
-                        onFollowUpClick={(originalText: string, action: FollowUpAction) => {
+                        onFollowUpClick={(originalText, action) => {
                             let prompt = '';
                             switch(action) {
                                 case 'explain': prompt = `Giải thích chi tiết hơn về: "${originalText.substring(0, 100)}..."`; break;
@@ -1531,10 +1463,13 @@ Nếu được yêu cầu vẽ biểu đồ, hãy trả về JSON \`chart_json\`
                             }
                             handleSendMessage(prompt);
                         }}
-                        onApplySchedule={(scheduleText: string) => {}}
-                        onOpenFlashcards={(cards: { term: string; definition: string }[]) => setFlashcardData(cards)}
-                        onOpenMindMap={(data: MindMapNode) => setMindMapModalState({ data, messageIndex: idx })}
-                        onAskSelection={(text: string) => handleSendMessage(`Giải thích giúp tôi đoạn này: "${text}"`)}
+                        onApplySchedule={(scheduleText) => {
+                            // This callback is for old markdown text parsing if needed, 
+                            // but we now support structured JSON which is handled inside ChatMessage via buttons
+                        }}
+                        onOpenFlashcards={(cards) => setFlashcardData(cards)}
+                        onOpenMindMap={(data) => setMindMapModalState({ data, messageIndex: idx })}
+                        onAskSelection={(text) => handleSendMessage(`Giải thích giúp tôi đoạn này: "${text}"`)}
                         onRegenerate={idx === activeChat.messages.length - 1 && msg.role === 'model' ? () => {
                              const lastUserMsgIndex = activeChat.messages.length - 2;
                              if (lastUserMsgIndex >= 0) {
@@ -1591,100 +1526,112 @@ Nếu được yêu cầu vẽ biểu đồ, hãy trả về JSON \`chart_json\`
         </div>
       </main>
       
-      {/* Lofi Player Widget */}
+      {/* Lofi Player Widget - Wrapped in local Suspense to avoid crashing/flashing the whole app if lazy loaded */}
       <React.Suspense fallback={null}>
         <LofiPlayer />
       </React.Suspense>
         
-      {isSettingsOpen && (
-          <React.Suspense fallback={null}>
-              <SettingsModal 
-                  user={currentUser} 
-                  onClose={() => setIsSettingsOpen(false)} 
-                  onUpdateUser={handleUpdateUserInternal}
-              />
-          </React.Suspense>
-      )}
+        {isSettingsOpen && (
+            <React.Suspense fallback={null}>
+                <SettingsModal 
+                    user={currentUser} 
+                    onClose={() => setIsSettingsOpen(false)} 
+                    onUpdateUser={handleUpdateUserInternal}
+                />
+            </React.Suspense>
+        )}
         
-      {flashcardData && (
-          <React.Suspense fallback={null}>
-              <FlashcardView cards={flashcardData} onClose={() => setFlashcardData(null)} />
-          </React.Suspense>
-      )}
-      {mindMapModalState && (
-          <React.Suspense fallback={null}>
-              <MindMapModal data={mindMapModalState.data} onClose={() => setMindMapModalState(null)} onCreateNewMindMap={handleCreateNewMindMap} onSave={handleSaveMindMap} />
-          </React.Suspense>
-      )}
-      {isCalculatorOpen && <React.Suspense fallback={null}><ToolModal title="Máy tính khoa học" onClose={() => setIsCalculatorOpen(false)}><Calculator /></ToolModal></React.Suspense>}
-      {isPeriodicTableOpen && <React.Suspense fallback={null}><ToolModal title="Bảng tuần hoàn" onClose={() => setIsPeriodicTableOpen(false)} initialSize={{width: 800, height: 500}}><PeriodicTable /></ToolModal></React.Suspense>}
-      {isWhiteboardOpen && <React.Suspense fallback={null}><ToolModal title="Bảng trắng tương tác" onClose={() => setIsWhiteboardOpen(false)} initialSize={{width: 800, height: 600}}><Whiteboard onCapture={handleWhiteboardCapture} /></ToolModal></React.Suspense>}
-      {isPomodoroOpen && <React.Suspense fallback={null}><PomodoroTimer onClose={() => setIsPomodoroOpen(false)} /></React.Suspense>}
-      {isUnitConverterOpen && <React.Suspense fallback={null}><ToolModal title="Chuyển đổi đơn vị" onClose={() => setIsUnitConverterOpen(false)} initialSize={{width: 400, height: 500}}><UnitConverter /></ToolModal></React.Suspense>}
-      {isProbabilitySimOpen && <React.Suspense fallback={null}><ToolModal title="Mô phỏng xác suất" onClose={() => setIsProbabilitySimOpen(false)} initialSize={{width: 400, height: 500}}><ProbabilitySim /></ToolModal></React.Suspense>}
-      {isFormulaNotebookOpen && <React.Suspense fallback={null}><ToolModal title="Sổ tay công thức" onClose={() => setIsFormulaNotebookOpen(false)} initialSize={{width: 500, height: 600}}><FormulaNotebook /></ToolModal></React.Suspense>}
-      {isBreathingOpen && <React.Suspense fallback={null}><BreathingExercise onClose={() => setIsBreathingOpen(false)} /></React.Suspense>}
-      {isTarotOpen && <React.Suspense fallback={null}><TarotReader onClose={() => setIsTarotOpen(false)} onReadingRequest={handleTarotReading} /></React.Suspense>}
+        {flashcardData && (
+            <React.Suspense fallback={null}>
+                <FlashcardView 
+                    cards={flashcardData} 
+                    onClose={() => setFlashcardData(null)} 
+                />
+            </React.Suspense>
+        )}
+        
+        {mindMapModalState && (
+            <React.Suspense fallback={null}>
+                <MindMapModal
+                    data={mindMapModalState.data}
+                    onClose={() => setMindMapModalState(null)}
+                    onCreateNewMindMap={handleCreateNewMindMap}
+                    onSave={handleSaveMindMap}
+                />
+            </React.Suspense>
+        )}
 
-      {/* INSTALL INSTRUCTION MODAL (New) */}
-      {showInstallInstructions && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-message-pop-in">
-              <div className="bg-card rounded-2xl shadow-2xl max-w-sm w-full p-6 border border-border text-center relative">
-                   <button 
-                       onClick={() => setShowInstallInstructions(false)}
-                       className="absolute top-3 right-3 p-1 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700"
-                   >
-                       <XIcon className="w-5 h-5 text-text-secondary" />
-                   </button>
+        {isCalculatorOpen && (
+             <React.Suspense fallback={null}>
+                <ToolModal title="Máy tính khoa học" onClose={() => setIsCalculatorOpen(false)}>
+                    <Calculator />
+                </ToolModal>
+             </React.Suspense>
+        )}
 
-                   <div className="mb-4 flex justify-center">
-                       <div className="w-16 h-16 bg-brand rounded-2xl flex items-center justify-center shadow-lg">
-                            <DownloadAppIcon className="w-8 h-8 text-white" />
-                       </div>
-                   </div>
-                   
-                   <h3 className="text-xl font-bold mb-2">Cài đặt KL AI</h3>
-                   <p className="text-sm text-text-secondary mb-6">
-                       {isIOS 
-                         ? "Trên iPhone/iPad, trình duyệt không hỗ trợ cài đặt tự động. Hãy làm theo hướng dẫn sau:" 
-                         : "Trình duyệt của bạn không hỗ trợ cài đặt tự động. Hãy thử:"}
-                   </p>
-                   
-                   <div className="space-y-4 text-left bg-sidebar p-4 rounded-xl border border-border">
-                       <div className="flex items-start gap-3">
-                           <div className="w-6 h-6 flex items-center justify-center bg-card rounded-full text-xs font-bold border border-border shadow-sm">1</div>
-                           <div>
-                               <p className="text-sm font-medium">Nhấn nút Chia sẻ</p>
-                               <p className="text-xs text-text-secondary">(Biểu tượng <ShareIOSIcon className="w-3 h-3 inline mx-0.5" /> ở thanh công cụ)</p>
-                           </div>
-                       </div>
-                       <div className="flex items-start gap-3">
-                           <div className="w-6 h-6 flex items-center justify-center bg-card rounded-full text-xs font-bold border border-border shadow-sm">2</div>
-                           <div>
-                               <p className="text-sm font-medium">Chọn "Thêm vào MH chính"</p>
-                               <p className="text-xs text-text-secondary">(Add to Home Screen)</p>
-                           </div>
-                       </div>
-                        <div className="flex items-start gap-3">
-                           <div className="w-6 h-6 flex items-center justify-center bg-card rounded-full text-xs font-bold border border-border shadow-sm">3</div>
-                           <div>
-                               <p className="text-sm font-medium">Nhấn "Thêm" (Add)</p>
-                           </div>
-                       </div>
-                   </div>
-                   
-                   <button 
-                      onClick={() => setShowInstallInstructions(false)}
-                      className="w-full mt-6 py-3 bg-brand text-white font-bold rounded-xl shadow-lg active:scale-95 transition-transform"
-                   >
-                       Đã hiểu
-                   </button>
-              </div>
-          </div>
-      )}
+        {isPeriodicTableOpen && (
+             <React.Suspense fallback={null}>
+                <ToolModal title="Bảng tuần hoàn" onClose={() => setIsPeriodicTableOpen(false)} initialSize={{width: 800, height: 500}}>
+                    <PeriodicTable />
+                </ToolModal>
+             </React.Suspense>
+        )}
+        
+        {isWhiteboardOpen && (
+             <React.Suspense fallback={null}>
+                <ToolModal title="Bảng trắng tương tác" onClose={() => setIsWhiteboardOpen(false)} initialSize={{width: 800, height: 600}}>
+                    <Whiteboard onCapture={handleWhiteboardCapture} />
+                </ToolModal>
+             </React.Suspense>
+        )}
 
-      {/* Demo Limit Modal */}
-      {showDemoLimitModal && (
+        {isPomodoroOpen && (
+             <React.Suspense fallback={null}>
+                <PomodoroTimer onClose={() => setIsPomodoroOpen(false)} />
+             </React.Suspense>
+        )}
+
+        {isUnitConverterOpen && (
+             <React.Suspense fallback={null}>
+                <ToolModal title="Chuyển đổi đơn vị" onClose={() => setIsUnitConverterOpen(false)} initialSize={{width: 400, height: 500}}>
+                    <UnitConverter />
+                </ToolModal>
+             </React.Suspense>
+        )}
+
+        {isProbabilitySimOpen && (
+             <React.Suspense fallback={null}>
+                <ToolModal title="Mô phỏng xác suất" onClose={() => setIsProbabilitySimOpen(false)} initialSize={{width: 400, height: 500}}>
+                    <ProbabilitySim />
+                </ToolModal>
+             </React.Suspense>
+        )}
+
+        {isFormulaNotebookOpen && (
+             <React.Suspense fallback={null}>
+                <ToolModal title="Sổ tay công thức" onClose={() => setIsFormulaNotebookOpen(false)} initialSize={{width: 500, height: 600}}>
+                    <FormulaNotebook />
+                </ToolModal>
+             </React.Suspense>
+        )}
+        
+        {isBreathingOpen && (
+             <React.Suspense fallback={null}>
+                <BreathingExercise onClose={() => setIsBreathingOpen(false)} />
+             </React.Suspense>
+        )}
+
+        {isTarotOpen && (
+             <React.Suspense fallback={null}>
+                <TarotReader 
+                    onClose={() => setIsTarotOpen(false)} 
+                    onReadingRequest={handleTarotReading} 
+                />
+             </React.Suspense>
+        )}
+
+        {/* Demo Limit Modal */}
+        {showDemoLimitModal && (
             <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
                 <div className="bg-card rounded-2xl shadow-2xl max-w-md w-full p-6 border border-border animate-message-pop-in">
                     <div className="flex justify-center mb-4">
@@ -1699,19 +1646,27 @@ Nếu được yêu cầu vẽ biểu đồ, hãy trả về JSON \`chart_json\`
                     </p>
                     <div className="flex flex-col gap-3">
                          <button 
-                            onClick={() => { setShowDemoLimitModal(false); onLogout(); }}
+                            onClick={() => {
+                                setShowDemoLimitModal(false);
+                                onLogout(); 
+                            }}
                             className="w-full py-3 bg-brand hover:bg-brand/90 text-white font-bold rounded-xl shadow-lg transition-transform active:scale-95"
                          >
                              Đăng ký ngay
                          </button>
-                         <button onClick={() => setShowDemoLimitModal(false)} className="w-full py-3 bg-sidebar hover:bg-card-hover text-text-primary font-semibold rounded-xl transition-colors">Để sau</button>
+                         <button 
+                            onClick={() => setShowDemoLimitModal(false)}
+                            className="w-full py-3 bg-sidebar hover:bg-card-hover text-text-primary font-semibold rounded-xl transition-colors"
+                         >
+                             Để sau
+                         </button>
                     </div>
                 </div>
             </div>
         )}
 
-      {/* Login Prompt Modal */}
-      {showLoginPromptModal && (
+        {/* Login Prompt Modal (Settings Access) */}
+        {showLoginPromptModal && (
             <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
                 <div className="bg-card rounded-2xl shadow-2xl max-w-md w-full p-6 border border-border animate-message-pop-in">
                     <div className="flex justify-center mb-4">
@@ -1725,12 +1680,20 @@ Nếu được yêu cầu vẽ biểu đồ, hãy trả về JSON \`chart_json\`
                     </p>
                     <div className="flex flex-col gap-3">
                          <button 
-                            onClick={() => { setShowLoginPromptModal(false); onLogout(); }}
+                            onClick={() => {
+                                setShowLoginPromptModal(false);
+                                onLogout(); 
+                            }}
                             className="w-full py-3 bg-brand hover:bg-brand/90 text-white font-bold rounded-xl shadow-lg transition-transform active:scale-95"
                          >
                              Đăng nhập / Đăng ký
                          </button>
-                         <button onClick={() => setShowLoginPromptModal(false)} className="w-full py-3 bg-sidebar hover:bg-card-hover text-text-primary font-semibold rounded-xl transition-colors">Đóng</button>
+                         <button 
+                            onClick={() => setShowLoginPromptModal(false)}
+                            className="w-full py-3 bg-sidebar hover:bg-card-hover text-text-primary font-semibold rounded-xl transition-colors"
+                         >
+                             Đóng
+                         </button>
                     </div>
                 </div>
             </div>

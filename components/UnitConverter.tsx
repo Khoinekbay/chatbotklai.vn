@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { ScaleIcon } from './Icons';
+import { ScaleIcon, XIcon } from './Icons';
 
 interface UnitConverterProps {
   // No specific props needed
