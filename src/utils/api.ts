@@ -1,5 +1,5 @@
 
-import { User, ChatSession, Message } from '../../types';
+import { User, ChatSession, Message } from '../types';
 import { supabase } from './supabaseClient';
 
 const USERS_KEY = 'kl_ai_users';

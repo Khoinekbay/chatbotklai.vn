@@ -1,7 +1,8 @@
 
+
 import React, { useState, useEffect, useRef } from 'react';
-import { KlAiLogo } from '../../components/Icons';
-import { type User } from '../../types';
+import { KlAiLogo } from './Icons';
+import { type User } from '../types';
 import { api } from '../utils/api';
 
 interface AuthProps {

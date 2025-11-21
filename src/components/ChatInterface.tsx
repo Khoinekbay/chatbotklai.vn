@@ -165,7 +165,7 @@ const getSystemInstruction = (role: User['aiRole'] = 'assistant', tone: User['ai
         case 'chat_document':
              return `BẠN LÀ TRỢ LÝ PHÂN TÍCH TÀI LIỆU. Nhiệm vụ: Trả lời câu hỏi của người dùng CHỈ DỰA TRÊN nội dung file đính kèm. Tuyệt đối không bịa đặt thông tin. Nếu thông tin không có trong file, hãy trả lời: "Thông tin này không có trong tài liệu được cung cấp."`;
         case 'data_analysis':
-             return `BẠN LÀ CHUYÊN GIA PHÂN TÍCH DỮ LIỆU. Phân tích dữ liệu được cung cấp, trả lời câu hỏi, tìm insight và tạo biểu đồ. Khi được yêu cầu vẽ biểu đồ, bạn PHẢI trả về khối JSON \`chart_json\`.`;
+             return `BẠN LÀ CHUYÊN GIA PHÂN TÍCH DỮ LIỆU. Phân tích dữ liệu được cung cấp, trả lời câu hỏi, tìm insight và tạo biểu đồ. Khi được yêu cầu vẽ biểu đồ, bạn PHẢI trả về một khối JSON \`chart_json\`.`;
     }
 
     // --- STANDARD CHAT MODE (Fallback) ---
@@ -1639,19 +1639,19 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
                         message={msg} 
                         isLastMessage={idx === activeChat.messages.length - 1}
                         isLoading={isLoading}
-                        onFollowUpClick={(originalText, action) => {
+                        onFollowUpClick={(originalText: string, action: FollowUpAction) => {
                             let prompt = '';
                             switch(action) {
                                 case 'explain': prompt = `Giải thích chi tiết hơn về: "${originalText.substring(0, 100)}..."`; break;
                                 case 'example': prompt = `Cho ví dụ minh họa về: "${originalText.substring(0, 100)}..."`; break;
                                 case 'summarize': prompt = `Tóm tắt ngắn gọn nội dung: "${originalText.substring(0, 100)}..."`; break;
                             }
-                            handleSendMessage(prompt);
+                            handleSendMessage(prompt, []);
                         }}
-                        onApplySchedule={(scheduleText) => {}}
-                        onOpenFlashcards={(cards) => setFlashcardData(cards)}
-                        onOpenMindMap={(data) => setMindMapModalState({ data, messageIndex: idx })}
-                        onAskSelection={(text) => handleSendMessage(`Giải thích giúp tôi đoạn này: "${text}"`)}
+                        onApplySchedule={(scheduleText: string) => {}}
+                        onOpenFlashcards={(cards: { term: string; definition: string }[]) => setFlashcardData(cards)}
+                        onOpenMindMap={(data: MindMapNode) => setMindMapModalState({ data, messageIndex: idx })}
+                        onAskSelection={(text: string) => handleSendMessage(`Giải thích giúp tôi đoạn này: "${text}"`, [])}
                         onRegenerate={idx === activeChat.messages.length - 1 && msg.role === 'model' ? () => {
                              const lastUserMsgIndex = activeChat.messages.length - 2;
                              if (lastUserMsgIndex >= 0) {

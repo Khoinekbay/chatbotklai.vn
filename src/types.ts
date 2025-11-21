@@ -1,4 +1,5 @@
 
+
 export type Role = 'user' | 'model';
 
 export type Mode = 'chat' | 'create_exam' | 'solve_exam' | 'create_schedule' | 'learn' | 'exam' | 'theory' | 'flashcard' | 'scramble_exam' | 'similar_exam' | 'create_file' | 'mind_map' | 'generate_image' | 'grader' | 'chat_document' | 'data_analysis' | 'rpg' | 'roast' | 'akinator' | 'tarot' | 'mbti';
