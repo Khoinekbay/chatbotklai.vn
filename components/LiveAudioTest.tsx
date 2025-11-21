@@ -7,6 +7,11 @@ interface LiveAudioTestProps {
   onClose: () => void;
 }
 
+interface LiveSession {
+    sendRealtimeInput: (input: { media: { mimeType: string; data: string }}) => void;
+    close: () => void;
+}
+
 const LiveAudioTest: React.FC<LiveAudioTestProps> = ({ onClose }) => {
   const [status, setStatus] = useState<string>("Đã ngắt kết nối");
   const [logs, setLogs] = useState<string[]>([]);
@@ -18,7 +23,7 @@ const LiveAudioTest: React.FC<LiveAudioTestProps> = ({ onClose }) => {
   const logsEndRef = useRef<HTMLDivElement>(null);
   
   // Store the session promise
-  const sessionPromiseRef = useRef<Promise<any> | null>(null);
+  const sessionPromiseRef = useRef<Promise<LiveSession> | null>(null);
   
   // Audio Context Refs
   const inputAudioContextRef = useRef<AudioContext | null>(null);
@@ -167,7 +172,7 @@ const LiveAudioTest: React.FC<LiveAudioTestProps> = ({ onClose }) => {
       const processor = audioContext.createScriptProcessor(4096, 1, 1);
       processorRef.current = processor;
 
-      processor.onaudioprocess = (e) => {
+      processor.onaudioprocess = (e: AudioProcessingEvent) => {
         const inputData = e.inputBuffer.getChannelData(0);
         const pcmData = floatTo16BitPCM(inputData);
         const base64String = arrayBufferToBase64(pcmData.buffer);
@@ -275,17 +280,17 @@ const LiveAudioTest: React.FC<LiveAudioTestProps> = ({ onClose }) => {
                 addLog("🤖 Kết thúc lượt nói.");
             }
           },
-          onclose: () => {
+          onclose: (e: CloseEvent) => {
             setStatus("🔒 Đã đóng");
-            addLog("🔒 Connection closed.");
+            addLog(`🔒 Connection closed: Code ${e.code}, Reason: ${e.reason}`);
             setIsConnecting(false);
             setIsConnected(false);
             setIsRecording(false);
             stopAudioStream();
           },
-          onerror: (e) => {
+          onerror: (e: ErrorEvent) => {
             setStatus("❌ Lỗi");
-            addLog(`❌ Error: ${e instanceof Error ? e.message : 'Unknown'}`);
+            addLog(`❌ Error: ${e.message}`);
             setIsConnecting(false);
             setIsConnected(false);
             setIsRecording(false);

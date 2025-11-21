@@ -1,5 +1,4 @@
 
-// ... existing imports ...
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { GoogleGenAI, Chat } from '@google/genai';
@@ -37,8 +36,8 @@ declare global {
     }
 }
 
-// ... rest of the code (getSystemInstruction, parsers, etc.) ...
 const getSystemInstruction = (role: User['aiRole'] = 'assistant', tone: User['aiTone'] = 'balanced', customInstruction?: string, currentMode?: Mode): string => {
+    
     // --- SPECIAL MODES OVERRIDE (Ignore user settings) ---
     if (currentMode === 'rpg') {
         return `Bạn là Game Master (GM) của một trò chơi nhập vai dạng văn bản (Text Adventure). Hãy dẫn dắt người chơi qua một cốt truyện thú vị, sáng tạo. Bắt đầu bằng việc mô tả bối cảnh hiện tại và hỏi người chơi muốn làm gì. Luôn mô tả hậu quả của hành động một cách sinh động. Giữ giọng văn lôi cuốn.`;
@@ -54,6 +53,70 @@ const getSystemInstruction = (role: User['aiRole'] = 'assistant', tone: User['ai
     }
     if (currentMode === 'mbti') {
         return `Bạn là chuyên gia tâm lý học. Hãy đặt các câu hỏi trắc nghiệm ngắn để xác định tính cách MBTI của người dùng. Hỏi từng câu một. Sau khoảng 10 câu, hãy đưa ra dự đoán về nhóm tính cách của họ.`;
+    }
+
+    // --- FORMATTING & LEARNING MODES ---
+    if (currentMode === 'flashcard') {
+        return `CHẾ ĐỘ TẠO FLASHCARD (THẺ GHI NHỚ):
+        Nhiệm vụ: Tóm tắt nội dung người dùng cung cấp thành các cặp "Thuật ngữ" và "Định nghĩa" để học tập.
+        YÊU CẦU ĐỊNH DẠNG BẮT BUỘC:
+        1. Trả về MỘT Bảng Markdown (Markdown Table) duy nhất chứa toàn bộ nội dung.
+        2. Bảng phải có đúng 2 cột với tiêu đề chính xác là: | Thuật ngữ | Định nghĩa |
+        3. Nội dung trong bảng phải ngắn gọn, cô đọng, tập trung vào ý chính.
+        4. Không viết thêm lời dẫn dài dòng, đi thẳng vào bảng.
+        
+        Ví dụ mẫu:
+        | Thuật ngữ | Định nghĩa |
+        |---|---|
+        | Tế bào | Đơn vị cơ bản của sự sống |
+        | ATP | Đồng tiền năng lượng của tế bào |
+        `;
+    }
+
+    if (currentMode === 'mind_map') {
+        return `CHẾ ĐỘ TẠO SƠ ĐỒ TƯ DUY (MIND MAP):
+        Nhiệm vụ: Phân tích chủ đề hoặc văn bản thành cấu trúc phân cấp (cây) để vẽ sơ đồ.
+        YÊU CẦU ĐỊNH DẠNG BẮT BUỘC:
+        1. Trả về MỘT Danh sách Markdown (Markdown List).
+        2. Sử dụng dấu gạch ngang (-) đầu dòng cho mỗi mục.
+        3. Sử dụng thụt đầu dòng (Indent - 2 dấu cách) để thể hiện cấp độ cha - con.
+        4. Dòng đầu tiên là Chủ đề chính (Gốc).
+        5. Các dòng tiếp theo là nhánh con.
+        
+        Ví dụ mẫu:
+        - Hệ Mặt Trời
+          - Mặt Trời
+          - Các hành tinh
+            - Trái Đất
+            - Sao Hỏa
+        `;
+    }
+
+    if (currentMode === 'learn') {
+        return `CHẾ ĐỘ HỌC TẬP (GIA SƯ AI):
+        Vai trò: Bạn là một gia sư riêng kiên nhẫn, thân thiện và giỏi sư phạm.
+        Phương pháp:
+        1. Giải thích khái niệm theo từng bước nhỏ (Step-by-step).
+        2. Dùng ngôn ngữ đơn giản, dễ hiểu, có ví dụ thực tế hoặc phép ẩn dụ.
+        3. QUAN TRỌNG: Sau khi giải thích xong một ý chính, hãy ĐẶT CÂU HỎI KIỂM TRA (Quiz) để đảm bảo người dùng đã hiểu trước khi sang phần tiếp theo.
+        4. Nếu người dùng trả lời sai, hãy giải thích lại nhẹ nhàng và đưa ra gợi ý.
+        `;
+    }
+
+    if (currentMode === 'theory') {
+        return `CHẾ ĐỘ LÝ THUYẾT CHUYÊN SÂU:
+        Vai trò: Bạn là giáo sư biên soạn sách giáo khoa chuyên khảo.
+        Phương pháp:
+        1. Trình bày nội dung cực kỳ chi tiết, hệ thống và chính xác tuyệt đối.
+        2. Cấu trúc bài giảng chuẩn mực:
+           - Định nghĩa/Khái niệm (Rõ ràng)
+           - Định lý/Tính chất (kèm Chứng minh nếu là Toán/Lý)
+           - Công thức (Bắt buộc dùng LaTeX chuẩn $$...$$ cho công thức riêng dòng)
+           - Các dạng bài tập thường gặp và phương pháp giải
+           - Ví dụ minh họa và Phản ví dụ (Counter-examples)
+           - Ứng dụng thực tế
+        3. Phong cách: Trang trọng, hàn lâm, súc tích.
+        `;
     }
 
     // --- STANDARD MODES ---
@@ -141,10 +204,11 @@ const getSystemInstruction = (role: User['aiRole'] = 'assistant', tone: User['ai
     }
 
     return finalPrompt;
-};
+}
 
 const parseFlashcardsFromResponse = (text: string): { intro: string; cards: { term: string; definition: string }[] } | null => {
-    const tableRegex = /^\|(.+)\|\r?\n\|( *[-:]+[-| :]*)\|\r?\n((?:\|.*\|\r?\n?)*)/m;
+    // Look for markdown table syntax
+    const tableRegex = /\|(.+)\|\r?\n\|( *[-:]+[-| :]*)\|\r?\n((?:\|.*\|\r?\n?)*)/m;
     const match = text.match(tableRegex);
   
     if (!match) return null;
@@ -155,11 +219,18 @@ const parseFlashcardsFromResponse = (text: string): { intro: string; cards: { te
     const lines = tableMarkdown.trim().split('\n');
     if (lines.length < 3) return null;
 
+    // Check header row to ensure it's likely a definition table (heuristic)
+    // We skip this check if we are in flashcard mode explicitly, but good to have some safety
+    
     const rows = lines.slice(2);
     const cards = rows.map(row => {
-      const columns = row.split('|').map(c => c.trim()).filter(Boolean);
-      if (columns.length >= 2) {
-        return { term: columns[0], definition: columns[1] };
+      // Strip leading/trailing pipes
+      const rowContent = row.replace(/^\||\|$/g, '');
+      const columns = rowContent.split('|').map(c => c.trim());
+      
+      if (columns.length >= 2 && columns[0] && columns[1]) {
+        // Handle cases where description might contain pipes (escaped or not) - simplified here
+        return { term: columns[0], definition: columns.slice(1).join('|') }; 
       }
       return null;
     }).filter((card): card is { term: string; definition: string } => card !== null);
@@ -170,6 +241,7 @@ const parseFlashcardsFromResponse = (text: string): { intro: string; cards: { te
 };
 
 const parseSpecialJsonBlock = (text: string, blockName: string): any | null => {
+    // Improved regex to handle optional newlines/spaces after the block name
     const regex = new RegExp(`\`\`\`${blockName}\\s*([\\s\\S]*?)\`\`\``);
     const match = text.match(regex);
     if (match && match[1]) {
@@ -185,28 +257,35 @@ const parseSpecialJsonBlock = (text: string, blockName: string): any | null => {
 };
 
 const parseMindMapFromResponse = (text: string): { intro: string, data: MindMapNode | null } => {
-    const lines = text.split('\n').filter(line => line.trim().startsWith('-') || line.trim().startsWith('*'));
+    // Look for list items starting with - or *
+    const lines = text.split('\n').filter(line => /^\s*[-*]\s+/.test(line));
+    
     if (lines.length === 0) {
         return { intro: text, data: null };
     }
 
-    const firstListIndex = text.indexOf(lines[0]);
-    const intro = text.substring(0, firstListIndex).trim();
+    // Extract intro (text before the first list item)
+    const firstListLineIndex = text.indexOf(lines[0]);
+    const intro = text.substring(0, firstListLineIndex).trim();
 
-    const getIndent = (line: string) => line.match(/^\s*/)?.[0].length || 0;
+    const getIndent = (line: string) => {
+        const match = line.match(/^(\s*)/);
+        return match ? match[1].length : 0;
+    };
 
     let root: MindMapNode | null = null;
     const stack: { node: MindMapNode; indent: number }[] = [];
     const topLevelNodes: MindMapNode[] = [];
 
-
     lines.forEach(line => {
         const indent = getIndent(line);
-        const name = line.trim().replace(/^[-*]\s*/, '').trim();
+        // Remove list marker
+        const name = line.replace(/^\s*[-*]\s+/, '').trim();
         if (!name) return;
 
         const newNode: MindMapNode = { name, children: [] };
 
+        // Pop stack to find parent
         while (stack.length > 0 && stack[stack.length - 1].indent >= indent) {
             stack.pop();
         }
@@ -224,11 +303,14 @@ const parseMindMapFromResponse = (text: string): { intro: string, data: MindMapN
         stack.push({ node: newNode, indent });
     });
     
+    // Wrap in a single root if multiple top-levels found or just return the single root
     if (topLevelNodes.length === 1) {
         root = topLevelNodes[0];
     } else if (topLevelNodes.length > 1) {
-        const mainTopicFromIntro = intro.split('\n').pop()?.replace(/[:.]$/, '').trim() || 'Sơ đồ tư duy';
-        root = { name: mainTopicFromIntro, children: topLevelNodes };
+        // Create a synthetic root based on prompt or generic name
+        const mainTopicMatch = intro.match(/sơ đồ tư duy (?:về|cho) (.+?)(?:\n|$|:)/i);
+        const rootName = mainTopicMatch ? mainTopicMatch[1].trim() : 'Chủ đề chính';
+        root = { name: rootName, children: topLevelNodes };
     }
 
     return { intro, data: root };
@@ -273,7 +355,6 @@ const mapMessageToHistory = (m: Message) => {
    };
 };
 
-// ... ChatInterface component ...
 interface ChatInterfaceProps {
   currentUser: User;
   onLogout: () => void;
@@ -281,7 +362,6 @@ interface ChatInterfaceProps {
 }
 
 const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, onUpdateUser }) => {
-  // ... (state definitions same as before) ...
   const [chatSessions, setChatSessions] = useState<ChatSession[]>([]);
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(false);
@@ -323,7 +403,6 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
   const entertainmentPopoverRef = useRef<HTMLDivElement>(null);
   const entertainmentButtonRef = useRef<HTMLButtonElement>(null);
 
-  // ... menuItems definition ...
   const menuItems = [
       { id: 'chat', label: 'Trò chuyện', icon: <UserIcon className="w-5 h-5" /> },
       { id: 'chat_document', label: 'Chat tài liệu', icon: <DocumentSearchIcon className="w-5 h-5 text-blue-500" /> },
@@ -356,9 +435,6 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
   const toolItems = menuItems.filter((m: any) => toolsIds.includes(m.id));
   const modeItems = menuItems.filter((m: any) => !toolsIds.includes(m.id));
 
-
-  // ... (omitted large chunks of useEffects for brevity as they are fine, focusing on render where implicit any is) ...
-  
   useEffect(() => {
     const savedTheme = currentUser?.theme || localStorage.getItem('kl-ai-theme') as 'light' | 'dark' || 'light';
     setTheme(savedTheme);
@@ -453,7 +529,6 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
           }
       }
   }, [activeChatId, chatSessions]); // Removed 'mode' dependency to rely on internal check
-
 
   const handleNewChat = useCallback(async (initialMode: Mode = 'chat', initialMessage?: Message) => {
     if (!currentUser) return;
@@ -1525,7 +1600,6 @@ Nếu được yêu cầu vẽ biểu đồ, hãy trả về JSON \`chart_json\`
           className="flex-1 overflow-y-auto p-4 md:p-6 scroll-smooth"
         >
             <div className="max-w-3xl mx-auto space-y-6">
-                {/* This fixes the map function error */}
                 {activeChat?.messages.map((msg: any, idx: number) => (
                     <ChatMessage 
                         key={idx} 
@@ -1541,7 +1615,7 @@ Nếu được yêu cầu vẽ biểu đồ, hãy trả về JSON \`chart_json\`
                             }
                             handleSendMessage(prompt);
                         }}
-                        onApplySchedule={(scheduleText: any) => {}}
+                        onApplySchedule={(scheduleText: string) => {}}
                         onOpenFlashcards={(cards: any) => setFlashcardData(cards)}
                         onOpenMindMap={(data: any) => setMindMapModalState({ data, messageIndex: idx })}
                         onAskSelection={(text: string) => handleSendMessage(`Giải thích giúp tôi đoạn này: "${text}"`)}

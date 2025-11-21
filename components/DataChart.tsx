@@ -1,8 +1,9 @@
 
 import React, { useEffect, useRef } from 'react';
+import { type ChartConfig } from '../types';
 
 interface DataChartProps {
-  config: any;
+  config: ChartConfig;
 }
 
 declare global {

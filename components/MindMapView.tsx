@@ -29,6 +29,11 @@ export interface D3Node extends MindMapNode {
   link?: string;
 }
 
+interface D3Link {
+    source: D3Node;
+    target: D3Node;
+}
+
 export interface MindMapViewHandles {
   zoomIn: () => void;
   zoomOut: () => void;
@@ -297,7 +302,7 @@ const MindMapView = React.forwardRef<MindMapViewHandles, MindMapViewProps>(({ da
         const node = containerG.selectAll("g.node").data(nodes, (d: D3Node) => d.id);
 
         const nodeEnter = node.enter().append("g")
-            .attr("class", d => `node node-id-${d.id}`)
+            .attr("class", (d: D3Node) => `node node-id-${d.id}`)
             .attr("transform", () => `translate(${sourceNode.y0 || sourceNode.y},${sourceNode.x0 || sourceNode.x})`)
             .on("click", function(d: D3Node) {
                 if (d3.event.defaultPrevented) return;
@@ -399,7 +404,7 @@ const MindMapView = React.forwardRef<MindMapViewHandles, MindMapViewProps>(({ da
         node.exit().transition().duration(duration)
             .attr("transform", () => `translate(${sourceNode.y},${sourceNode.x})`).remove();
 
-        const link = containerG.selectAll("path.link").data(links, (d: any) => d.target.id);
+        const link = containerG.selectAll("path.link").data(links, (d: D3Link) => d.target.id);
         
         link.enter().insert("path", "g")
             .attr("class", "link")
@@ -408,11 +413,11 @@ const MindMapView = React.forwardRef<MindMapViewHandles, MindMapViewProps>(({ da
                 return diagonalGenerator({ source: o, target: o });
             })
             .style({ fill: "none", "stroke-width": "2px" })
-            .style("stroke", (d: any) => d.target.color || "var(--border)");
+            .style("stroke", (d: D3Link) => d.target.color || "var(--border)");
 
         link.transition().duration(duration)
             .attr("d", diagonalGenerator)
-            .style("stroke", (d: any) => d.target.color || "var(--border)");
+            .style("stroke", (d: D3Link) => d.target.color || "var(--border)");
 
         link.exit().transition().duration(duration)
             .attr("d", () => {

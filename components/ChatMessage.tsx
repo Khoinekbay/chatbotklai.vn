@@ -235,7 +235,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, isLastMessage = fals
                 return dataObject;
             }
             return null;
-        }).filter((item: any): item is { fn: string, range?: [number, number] } => item !== null);
+        }).filter((item): item is { fn: string, range?: [number, number] } => item !== null);
         
         const encodedData = JSON.stringify(functionData).replace(/'/g, '&apos;');
         return `<div id="graph-${uniqueGraphId}" class="graph-container my-4" data-functions='${encodedData}'></div>`;
@@ -270,7 +270,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, isLastMessage = fals
                         const containerWidth = el.clientWidth || 350;
                         
                         // Inject scope for 'e' to fix "symbol e is undefined"
-                        const dataWithScope = functionData.map((d: any) => ({
+                        const dataWithScope = functionData.map((d: { fn: string; range?: [number, number], scope?: object }) => ({
                             ...d,
                             scope: {
                                 ...d.scope,
