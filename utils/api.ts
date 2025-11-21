@@ -1,4 +1,5 @@
 
+
 import { User, ChatSession, Message } from '../types';
 import { supabase } from './supabaseClient';
 
@@ -27,7 +28,6 @@ interface DbChat {
     is_pinned: boolean;
     updated_at: string;
 }
-
 
 // --- Helper functions for LocalStorage (Fallback) ---
 
