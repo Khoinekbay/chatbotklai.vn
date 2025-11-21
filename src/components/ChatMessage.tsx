@@ -1,4 +1,5 @@
 
+
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { type Message, type MindMapNode, type FollowUpAction } from '../types';
@@ -52,9 +53,9 @@ const markdownToHTML = (markdown: string): string => {
     })
     // Tables
     .replace(/^\|(.+)\|\r?\n\|( *[-:]+[-| :]*)\|\r?\n((?:\|.*\|\r?\n?)*)/gm, (match, header, separator, body) => {
-      const headers = header.split('|').slice(1, -1).map((h: string) => `<th>${h.trim()}</th>`).join('');
-      const rows = body.trim().split('\n').map((rowStr: string) => {
-          const cells = rowStr.split('|').slice(1, -1).map((c: string) => `<td>${c.trim()}</td>`).join('');
+      const headers = header.split('|').slice(1, -1).map(h => `<th>${h.trim()}</th>`).join('');
+      const rows = body.trim().split('\n').map(rowStr => {
+          const cells = rowStr.split('|').slice(1, -1).map(c => `<td>${c.trim()}</td>`).join('');
           return `<tr>${cells}</tr>`;
       }).join('');
       return `<div class="table-wrapper"><table><thead><tr>${headers}</tr></thead><tbody>${rows}</tbody></table></div>`;
@@ -89,6 +90,48 @@ const markdownToHTML = (markdown: string): string => {
 
   return html;
 }
+
+const renderMiniMarkdown = (text: string) => {
+    const html = text
+      .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+      .replace(/\*(.*?)\*/g, '<em>$1</em>')
+      .replace(/`([^`]+)`/g, '<code class="bg-slate-200 dark:bg-slate-900 text-amber-600 dark:text-amber-400 px-1 py-0.5 rounded text-xs font-mono">$1</code>');
+    return { __html: html };
+};
+
+const InlineFlashcards: React.FC<{ cards: { term: string; definition: string }[]; }> = ({ cards }) => {
+    const [revealedIndices, setRevealedIndices] = useState<Set<number>>(new Set());
+    const handleReveal = (index: number, e: React.MouseEvent) => {
+        e.stopPropagation();
+        setRevealedIndices(prev => new Set(prev).add(index));
+    };
+
+    return (
+        <div className="not-prose my-4">
+            <div className="space-y-3">
+                {cards.slice(0, 3).map((card, index) => ( // Show max 3 cards inline as preview
+                    <div key={index} className="grid grid-cols-1 md:grid-cols-2 gap-0 border border-border/50 rounded-lg overflow-hidden shadow-sm bg-card/50">
+                        <div 
+                            className="p-3 bg-sidebar/30 font-medium text-text-primary break-words text-sm flex items-center border-b md:border-b-0 md:border-r border-border/50"
+                            dangerouslySetInnerHTML={renderMiniMarkdown(card.term)}
+                        />
+                        <div className="relative p-3 bg-card/30 text-text-secondary break-words text-sm min-h-[3rem] flex items-center">
+                            <div dangerouslySetInnerHTML={renderMiniMarkdown(card.definition)} />
+                            
+                            <div
+                                onClick={(e) => handleReveal(index, e)}
+                                className={`absolute inset-0 flex items-center justify-center bg-brand text-white font-bold tracking-wide cursor-pointer hover:bg-brand/90 transition-all duration-300 z-10 select-none ${revealedIndices.has(index) ? 'opacity-0 pointer-events-none scale-110' : 'opacity-100'}`}
+                            >
+                                <span>Hiện đáp án</span>
+                            </div>
+                        </div>
+                    </div>
+                ))}
+                {cards.length > 3 && <div className="text-xs text-text-secondary text-center italic mt-2">...và còn {cards.length - 3} thẻ khác</div>}
+            </div>
+        </div>
+    );
+};
 
 const ChatMessage: React.FC<ChatMessageProps> = ({ message, isLastMessage = false, isLoading = false, onFollowUpClick, onApplySchedule, onOpenFlashcards, onOpenMindMap, onAskSelection, onRegenerate, userAvatar }) => {
   const [displayedText, setDisplayedText] = useState('');
@@ -174,7 +217,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, isLastMessage = fals
         // Use messageId + counter to ensure stability across re-renders
         const uniqueGraphId = `${messageId.current}-${graphCounter++}`;
         
-        const functionData = content.trim().split('\n').map((line: string) => {
+        const functionData = content.trim().split('\n').map(line => {
             const trimmedLine = line.trim();
             if (!trimmedLine) return null;
 
@@ -270,7 +313,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, isLastMessage = fals
                         const containerWidth = el.clientWidth || 350;
                         
                         // Inject scope for 'e' to fix "symbol e is undefined"
-                        const dataWithScope = functionData.map((d: { fn: string; range?: [number, number], scope?: object }) => ({
+                        const dataWithScope = functionData.map((d: any) => ({
                             ...d,
                             scope: {
                                 ...d.scope,
@@ -582,14 +625,15 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, isLastMessage = fals
   const alignmentClasses = isUser ? 'justify-end' : 'justify-start';
   const IconComponent = isUser ? UserIcon : AngryBotIcon;
   const iconClasses = isUser ? 'text-brand' : 'text-amber-400';
-  const showFollowUpActions = !isUser && (!isLastMessage || !isLoading) && message.text && onFollowUpClick && !message.mindMapData && !message.isError;
+  const showFollowUpActions = !isUser && (!isLastMessage || !isLoading) && message.text && onFollowUpClick && !message.mindMapData && !message.isError && !message.flashcards;
   const showApplyScheduleButton = !isUser && (!isLastMessage || !isLoading) && message.mode === 'create_schedule' && onApplySchedule;
-  const showOpenFlashcardsButton = !isUser && message.flashcards && message.flashcards.length > 0 && onOpenFlashcards && message.mode === 'flashcard';
+  // Show the footer open button if flashcards exist (replaces follow-up actions)
+  const showOpenFlashcardsButton = !isUser && message.flashcards && message.flashcards.length > 0 && onOpenFlashcards;
   const showDownloadButton = !isUser && message.fileToDownload && (!isLastMessage || !isLoading);
   const showOpenMindMapButton = !isUser && message.mindMapData && onOpenMindMap && (!isLastMessage || !isLoading);
   const showAddToCalendar = !isUser && message.scheduleData && (!isLastMessage || !isLoading);
 
-  if (!textToDisplay && message.role === 'model' && !isTyping && (!message.files || message.files.length === 0) && !message.mindMapData && !message.chartConfig) {
+  if (!textToDisplay && message.role === 'model' && !isTyping && (!message.files || message.files.length === 0) && !message.mindMapData && !message.chartConfig && (!message.flashcards || message.flashcards.length === 0)) {
     return null;
   }
   
@@ -656,6 +700,10 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, isLastMessage = fals
             {/* Render the memoized HTML content */}
             <div dangerouslySetInnerHTML={{ __html: htmlContent }} />
             
+            {!isUser && message.flashcards && message.flashcards.length > 0 && (
+                <InlineFlashcards cards={message.flashcards} />
+            )}
+            
             {/* Render Chart if available */}
             {!isUser && message.chartConfig && (
                 <div className="mt-4 not-prose">
@@ -680,7 +728,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, isLastMessage = fals
         </div>
         
         <div className={`flex items-center flex-wrap gap-2 mt-2 ${isUser ? 'justify-end' : 'pl-11'}`}>
-          {!isUser && !message.isError && message.text && (!isLastMessage || !isLoading) && (
+          {!isUser && !message.isError && (message.text || (message.flashcards && message.flashcards.length > 0)) && (!isLastMessage || !isLoading) && (
               <>
                   <button 
                     onClick={handleToggleSpeech} 
@@ -746,7 +794,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, isLastMessage = fals
               onClick={() => onOpenFlashcards(message.flashcards!)}
               className="bg-brand/10 hover:bg-brand/20 text-brand text-xs px-3 py-1.5 rounded-full transition-colors flex items-center gap-1.5 font-semibold"
             >
-              <FlashcardIcon className="w-4 h-4" /> Mở lại bộ thẻ
+              <FlashcardIcon className="w-4 h-4" /> Mở bảng flashcard
             </button>
           )}
 

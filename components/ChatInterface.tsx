@@ -1,8 +1,10 @@
 
+
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { GoogleGenAI, Chat } from '@google/genai';
-import { type Message, type ChatSession, type User, type MindMapNode, type Mode, type FollowUpAction } from '../types';
+// FIX: Import Role as a type
+import { type Message, type ChatSession, type User, type MindMapNode, type Mode, type FollowUpAction, type Role } from '../types';
 import ChatMessage from './ChatMessage';
 import ChatInput from './ChatInput';
 import TypingIndicator from './TypingIndicator';
@@ -33,12 +35,6 @@ const MODEL_NAME = 'gemini-2.5-flash';
 const IMAGE_MODEL_NAME = 'imagen-4.0-generate-001';
 // Fallback model if 4.0 fails
 const IMAGE_MODEL_FALLBACK = 'imagen-3.0-generate-001';
-
-declare global {
-    interface Window {
-        XLSX: any;
-    }
-}
 
 const getSystemInstruction = (role: User['aiRole'] = 'assistant', tone: User['aiTone'] = 'balanced', customInstruction?: string, currentMode?: Mode): string => {
     
@@ -316,9 +312,10 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
   const chatInstances = useRef<{ [key: string]: Chat }>({});
   const chatContainerRef = useRef<HTMLDivElement>(null);
   const featuresPopoverRef = useRef<HTMLDivElement>(null);
-  const featuresButtonRef = useRef<HTMLDivElement>(null);
+  // FIX: Correctly type button refs as HTMLButtonElement
+  const featuresButtonRef = useRef<HTMLButtonElement>(null);
   const entertainmentPopoverRef = useRef<HTMLDivElement>(null);
-  const entertainmentButtonRef = useRef<HTMLDivElement>(null);
+  const entertainmentButtonRef = useRef<HTMLButtonElement>(null);
 
   const menuItems = [
       { id: 'chat', label: 'Trò chuyện', icon: <UserIcon className="w-5 h-5" /> },
@@ -394,59 +391,71 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
     document.body.style.fontFamily = currentUser?.fontPreference || defaultFont;
   }, [currentUser?.fontPreference]);
 
-  // Sync mode with active chat to ensure UI (input placeholder) is always correct
+  // Sync mode with active chat to ensure UI is always correct when switching chats
   useEffect(() => {
       if (!activeChatId) return;
       const chat = chatSessions.find(c => c.id === activeChatId);
-      if (chat) {
-          const lastMsg = chat.messages[chat.messages.length - 1];
-          // Only sync if the mode is explicitly different to prevent loop or flickering
-          // and verify the mode is valid
-          if (lastMsg?.mode && lastMsg.mode !== mode) {
-              setMode(lastMsg.mode);
-          } else if (!lastMsg?.mode && mode !== 'chat') {
-              // Default fallback only if not already chat
-              setMode('chat');
+      if (chat && chat.messages.length > 0) {
+          // Find the last message that has a mode defined, starting from the end.
+          const lastMessageWithMode = [...chat.messages].reverse().find(msg => msg.mode);
+          const chatMode = lastMessageWithMode?.mode || 'chat'; // Default to 'chat'
+
+          if (chatMode !== mode) {
+              setMode(chatMode);
           }
+      } else if (!chat && chatSessions.length > 0) {
+          // If active chat is gone (e.g., deleted), switch to the first available chat
+          setActiveChatId(chatSessions[0].id);
       }
-  }, [activeChatId, chatSessions]); // Removed 'mode' dependency to rely on internal check
+  }, [activeChatId, chatSessions, mode]);
 
   const handleNewChat = useCallback(async (initialMode: Mode = 'chat', initialMessage?: Message) => {
     if (!currentUser) return;
     
-    const isSpecialMode = ['rpg', 'roast', 'akinator', 'tarot', 'mbti'].includes(initialMode);
-    const title = isSpecialMode ? `Chế độ ${initialMode.toUpperCase()}` : 'Đoạn chat mới';
+    let welcomeText = "Xin chào! Tôi là KL AI. Tôi có thể giúp gì cho bạn hôm nay?";
+    let title = 'Đoạn chat mới';
 
-    // 1. Create the object synchronously
+    switch (initialMode) {
+        case 'create_exam': title = 'Tạo đề thi'; welcomeText = 'Chế độ Tạo Đề Thi đã được kích hoạt. Hãy cho tôi biết chủ đề, số lượng câu hỏi và độ khó bạn muốn.'; break;
+        case 'solve_exam': title = 'Giải đề'; welcomeText = 'Chế độ Giải Đề đã sẵn sàng. Vui lòng tải lên ảnh hoặc dán nội dung đề bài vào đây.'; break;
+        case 'grader': title = 'Chấm bài'; welcomeText = 'Chế độ Chấm Bài đã bật. Hãy tải lên hình ảnh bài làm của học sinh để tôi chấm điểm và nhận xét.'; break;
+        case 'chat_document': title = 'Chat với Tài liệu'; welcomeText = 'Chế độ Chat với Tài liệu. Hãy đính kèm file PDF, TXT... và đặt câu hỏi về nội dung bên trong.'; break;
+        case 'data_analysis': title = 'Phân tích Dữ liệu'; welcomeText = 'Chế độ Phân tích Dữ liệu. Hãy tải lên file Excel/CSV và yêu cầu tôi phân tích hoặc vẽ biểu đồ.'; break;
+        case 'create_schedule': title = 'Lập lịch học'; welcomeText = 'Chế độ Lập Lịch Học. Cung cấp các môn học, thời gian rảnh và mục tiêu của bạn để tôi tạo thời gian biểu.'; break;
+        case 'learn': title = 'Học tập'; welcomeText = 'Chế độ Học Tập. Hãy bắt đầu với một chủ đề bạn muốn tìm hiểu sâu hơn.'; break;
+        case 'exam': title = 'Thi thử'; welcomeText = 'Chế độ Thi Thử. Hãy cho tôi biết môn học và dạng bài bạn muốn luyện tập.'; break;
+        case 'theory': title = 'Hệ thống Lý thuyết'; welcomeText = 'Chế độ Lý Thuyết. Bạn muốn tôi hệ thống lại kiến thức về chủ đề nào?'; break;
+        case 'flashcard': title = 'Tạo Flashcard'; welcomeText = 'Chế độ Flashcard. Cung cấp chủ đề hoặc danh sách các thuật ngữ để tôi tạo bộ thẻ học cho bạn.'; break;
+        case 'mind_map': title = 'Sơ đồ tư duy'; welcomeText = 'Chế độ Sơ đồ Tư duy. Hãy nhập chủ đề chính và tôi sẽ phác thảo sơ đồ cho bạn.'; break;
+        case 'scramble_exam': title = 'Trộn đề'; welcomeText = 'Chế độ Trộn Đề. Vui lòng cung cấp đề gốc để tôi tạo ra các phiên bản khác nhau.'; break;
+        case 'similar_exam': title = 'Tạo đề tương tự'; welcomeText = 'Chế độ Tạo Đề Tương Tự. Gửi cho tôi một đề bài và tôi sẽ tạo một đề mới với cấu trúc và độ khó tương đương.'; break;
+        case 'create_file': title = 'Tạo file'; welcomeText = 'Chế độ Tạo File. Bạn muốn tôi tạo file gì? (Văn bản, code, v.v...)'; break;
+        case 'generate_image': title = 'Tạo ảnh AI'; welcomeText = 'Chế độ Tạo Ảnh AI. Hãy mô tả chi tiết hình ảnh bạn muốn tạo.'; break;
+        case 'rpg': title = 'Game Nhập Vai'; welcomeText = "Chào mừng lữ khách! Bạn muốn phiêu lưu trong bối cảnh nào (Trung cổ, Cyberpunk, Kiếm hiệp...)?"; break;
+        case 'roast': title = 'Chế độ Mỏ Hỗn'; welcomeText = "Ồ, lại thêm một kẻ muốn nghe sự thật trần trụi à? Được thôi, nói gì đi nào."; break;
+        case 'akinator': title = 'Thần đèn Akinator'; welcomeText = "Ta là Thần đèn Akinator. Hãy nghĩ về một nhân vật và ta sẽ đoán ra. Sẵn sàng chưa?"; break;
+        case 'mbti': title = 'Trắc nghiệm MBTI'; welcomeText = "Chào bạn. Hãy bắt đầu bài trắc nghiệm tính cách MBTI nhé. Bạn sẵn sàng chưa?"; break;
+    }
+
+    const welcomeMessage: Message = { role: 'model', text: welcomeText, mode: initialMode };
+
     const newId = Date.now().toString();
     const newChat: ChatSession = {
       id: newId,
       title: title,
-      messages: initialMessage 
-        ? [initialMessage] 
-        : [{ role: 'model', text: "Xin chào! Tôi là KL AI. Tôi có thể giúp gì cho bạn hôm nay?", mode: initialMode }],
+      messages: initialMessage ? [initialMessage] : [welcomeMessage],
       isPinned: false,
     };
-    
-    if (isSpecialMode && !initialMessage) {
-         if (initialMode === 'rpg') newChat.messages = [{ role: 'model', text: "Chào mừng lữ khách! Bạn muốn phiêu lưu trong bối cảnh nào (Trung cổ, Cyberpunk, Kiếm hiệp...)?", mode: initialMode }];
-         if (initialMode === 'roast') newChat.messages = [{ role: 'model', text: "Ồ, lại thêm một kẻ muốn nghe sự thật trần trụi à? Được thôi, nói gì đi nào.", mode: initialMode }];
-         if (initialMode === 'akinator') newChat.messages = [{ role: 'model', text: "Ta là Thần đèn Akinator. Hãy nghĩ về một nhân vật và ta sẽ đoán ra. Sẵn sàng chưa?", mode: initialMode }];
-         if (initialMode === 'mbti') newChat.messages = [{ role: 'model', text: "Chào bạn. Hãy bắt đầu bài trắc nghiệm tính cách MBTI nhé. Bạn sẵn sàng chưa?", mode: initialMode }];
-    }
 
     if (initialMessage && initialMessage.role === 'user') {
         newChat.messages.push({ role: 'model', text: '', timestamp: new Date().toISOString(), mode: initialMode });
     }
 
-    // 2. UPDATE UI IMMEDIATELY
     setChatSessions(prev => [newChat, ...prev]);
-    setActiveChatId(newChat.id);
-    setMode(initialMode); // Explicitly set mode here to be safe
-    
+    setActiveChatId(newId);
+    setMode(initialMode);
     setIsMobileSidebarOpen(false);
     
-    // 3. Initialize Chat Instance (Safely)
     try {
         const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
         const systemInstruction = getSystemInstruction(currentUser?.aiRole, currentUser?.aiTone, currentUser?.customInstruction, initialMode);
@@ -456,11 +465,8 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
         });
         chatInstances.current[newChat.id] = chatInstance;
 
-        // Initial message handling if needed
         if (initialMessage && initialMessage.role === 'user') {
             setIsLoading(true);
-            // ... logic for initial message sending ...
-            // (Optimized out for brevity as the core issue is state update)
             chatInstance.sendMessageStream({ message: [{ text: initialMessage.text }] }).then(async (result) => {
                  let fullText = '';
                  for await (const chunk of result) {
@@ -489,10 +495,8 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
         }
     } catch (error) {
         console.error("Failed to initialize chat instance", error);
-        // Even if AI init fails, the UI should still switch to the new chat screen
     }
 
-    // 4. Save to API in Background
     if (!currentUser.isDemo) {
         api.saveChatSession(currentUser.username, newChat).catch(err => console.error("Background save failed", err));
     }
@@ -523,7 +527,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
         }
     };
     loadChats();
-  }, [currentUser.username]);
+  }, [currentUser.username, handleNewChat]);
 
   // Initialize Chat Instances (GenAI)
   useEffect(() => {
@@ -542,7 +546,8 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
             
             const chatHistory = session.messages
                 .map(mapMessageToHistory)
-                .filter((content): content is { role: string; parts: any[] } => content !== null);
+                // FIX: Use 'Role' type in type predicate
+                .filter((content): content is { role: Role; parts: any[] } => content !== null);
 
             const historyWithoutWelcome = chatHistory.length > 0 && chatHistory[0].role === 'model' 
                 ? chatHistory.slice(1) 
@@ -1022,7 +1027,8 @@ Nếu được yêu cầu vẽ biểu đồ, hãy trả về JSON \`chart_json\`
                chatSessions.forEach(session => {
                    const chatHistory = session.messages
                        .map(mapMessageToHistory)
-                       .filter((content): content is { role: string; parts: any[] } => content !== null);
+                       // FIX: Use 'Role' type in type predicate
+                       .filter((content): content is { role: Role; parts: any[] } => content !== null);
                     
                     const historyWithoutWelcome = chatHistory.length > 0 && chatHistory[0].role === 'model'
                         ? chatHistory.slice(1)

@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { GoogleGenAI, Chat } from '@google/genai';
-import { type Message, type ChatSession, type User, type MindMapNode, type Mode, type FollowUpAction } from '../types';
+import { type Message, type ChatSession, type User, type MindMapNode, type Mode, type FollowUpAction, type Role } from '../types';
 import ChatMessage from './ChatMessage';
 import ChatInput from './ChatInput';
 import TypingIndicator from './TypingIndicator';
@@ -26,6 +26,13 @@ const LofiPlayer = React.lazy(() => import('./LofiPlayer'));
 const TarotReader = React.lazy(() => import('./TarotReader'));
 const EntertainmentMenu = React.lazy(() => import('./EntertainmentMenu'));
 
+// Add type declaration for XLSX on window to fix TypeScript errors.
+declare global {
+    interface Window {
+      XLSX: any;
+    }
+}
+
 
 const DEMO_MESSAGE_LIMIT = 10;
 const MODEL_NAME = 'gemini-2.5-flash';
@@ -34,15 +41,40 @@ const IMAGE_MODEL_NAME = 'imagen-4.0-generate-001';
 // Fallback model if 4.0 fails
 const IMAGE_MODEL_FALLBACK = 'imagen-3.0-generate-001';
 
-declare global {
-    interface Window {
-        XLSX: any;
-    }
-}
-
 const getSystemInstruction = (role: User['aiRole'] = 'assistant', tone: User['aiTone'] = 'balanced', customInstruction?: string, currentMode?: Mode): string => {
     
     // --- SPECIAL MODES OVERRIDE (Ignore user settings) ---
+    if (currentMode === 'flashcard') {
+        return `Bạn là chuyên gia tạo Flashcard học tập.
+        
+        NHIỆM VỤ CHÍNH:
+        Tạo danh sách các cặp "Thuật ngữ" (Term) và "Định nghĩa" (Definition) từ yêu cầu của người dùng.
+        
+        QUY TẮC ĐỊNH DẠNG (BẮT BUỘC):
+        1. Tuyệt đối KHÔNG trả về bảng Markdown.
+        2. Tuyệt đối KHÔNG trả về danh sách gạch đầu dòng.
+        3. CHỈ trả về một khối mã JSON duy nhất với nhãn \`flashcard_json\`.
+        4. Cấu trúc JSON phải là một mảng các đối tượng:
+        \`\`\`flashcard_json
+        [
+          {"term": "Từ vựng/Câu hỏi", "definition": "Nghĩa/Câu trả lời"},
+          {"term": "Apple", "definition": "Quả táo"}
+        ]
+        \`\`\`
+        5. Bạn có thể viết 1 câu dẫn ngắn gọn ở đầu (ví dụ: "Dưới đây là bộ flashcard của bạn:").
+        `;
+    }
+     if (currentMode === 'mind_map') {
+        return `Bạn là một chuyên gia tạo sơ đồ tư duy. Khi người dùng cung cấp một chủ đề, hãy tạo ra một cấu trúc sơ đồ tư duy dưới dạng danh sách markdown (dùng dấu - hoặc *). Các mục con phải được lùi vào trong.
+        Ví dụ:
+        - Động vật
+          - Động vật có vú
+            - Chó
+            - Mèo
+          - Bò sát
+            - Rắn
+        `;
+    }
     if (currentMode === 'rpg') {
         return `Bạn là Game Master (GM) của một trò chơi nhập vai dạng văn bản (Text Adventure). Hãy dẫn dắt người chơi qua một cốt truyện thú vị, sáng tạo. Bắt đầu bằng việc mô tả bối cảnh hiện tại và hỏi người chơi muốn làm gì. Luôn mô tả hậu quả của hành động một cách sinh động. Giữ giọng văn lôi cuốn.`;
     }
@@ -147,6 +179,7 @@ const getSystemInstruction = (role: User['aiRole'] = 'assistant', tone: User['ai
 }
 
 const parseFlashcardsFromResponse = (text: string): { intro: string; cards: { term: string; definition: string }[] } | null => {
+    // Legacy parser for Markdown Tables
     const tableRegex = /^\|(.+)\|\r?\n\|( *[-:]+[-| :]*)\|\r?\n((?:\|.*\|\r?\n?)*)/m;
     const match = text.match(tableRegex);
   
@@ -277,6 +310,36 @@ const mapMessageToHistory = (m: Message) => {
    };
 };
 
+// Helper to read spreadsheet files
+const readSpreadsheet = (file: { data: string; mimeType: string }): Promise<string | null> => {
+    return new Promise((resolve) => {
+        try {
+            // Convert base64 to binary string
+            const binaryStr = atob(file.data);
+            const len = binaryStr.length;
+            const bytes = new Uint8Array(len);
+            for (let i = 0; i < len; i++) {
+                bytes[i] = binaryStr.charCodeAt(i);
+            }
+            
+            // Read workbook
+            if (window.XLSX) {
+                const workbook = window.XLSX.read(bytes.buffer, { type: 'array' });
+                const firstSheetName = workbook.SheetNames[0];
+                const worksheet = workbook.Sheets[firstSheetName];
+                // Convert to CSV text
+                const csv = window.XLSX.utils.sheet_to_csv(worksheet);
+                resolve(csv);
+            } else {
+                resolve(null);
+            }
+        } catch (e) {
+            console.error("Error reading spreadsheet", e);
+            resolve(null);
+        }
+    });
+};
+
 interface ChatInterfaceProps {
   currentUser: User;
   onLogout: () => void;
@@ -316,323 +379,12 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
   const chatInstances = useRef<{ [key: string]: Chat }>({});
   const chatContainerRef = useRef<HTMLDivElement>(null);
   const featuresPopoverRef = useRef<HTMLDivElement>(null);
-  // FIX: Changed ref type from HTMLDivElement to HTMLButtonElement to match the element it's attached to.
   const featuresButtonRef = useRef<HTMLButtonElement>(null);
   const entertainmentPopoverRef = useRef<HTMLDivElement>(null);
-  // FIX: Changed ref type from HTMLDivElement to HTMLButtonElement to match the element it's attached to.
   const entertainmentButtonRef = useRef<HTMLButtonElement>(null);
-
-  const menuItems = [
-      { id: 'chat', label: 'Trò chuyện', icon: <UserIcon className="w-5 h-5" /> },
-      { id: 'chat_document', label: 'Chat tài liệu', icon: <DocumentSearchIcon className="w-5 h-5 text-blue-500" /> },
-      { id: 'data_analysis', label: 'Phân tích dữ liệu', icon: <ChartIcon className="w-5 h-5 text-teal-500" /> },
-      { id: 'generate_image', label: 'Tạo ảnh AI', icon: <MagicIcon className="w-5 h-5 text-purple-500" /> },
-      { id: 'whiteboard', label: 'Bảng trắng', icon: <PresentationIcon className="w-5 h-5 text-blue-500" />, action: () => setIsWhiteboardOpen(true) },
-      { id: 'probability', label: 'Xác suất', icon: <DiceIcon className="w-5 h-5 text-indigo-500" />, action: () => setIsProbabilitySimOpen(true) },
-      { id: 'grader', label: 'Chấm bài', icon: <GraderIcon className="w-5 h-5 text-green-600" /> },
-      { id: 'create_exam', label: 'Tạo đề thi', icon: <CreateExamIcon className="w-5 h-5" /> },
-      { id: 'solve_exam', label: 'Giải đề', icon: <SolveExamIcon className="w-5 h-5" /> },
-      { id: 'create_schedule', label: 'Lập lịch', icon: <CreateScheduleIcon className="w-5 h-5" /> },
-      { id: 'learn', label: 'Học tập', icon: <LearnModeIcon className="w-5 h-5" /> },
-      { id: 'exam', label: 'Thi thử', icon: <ExamModeIcon className="w-5 h-5" /> },
-      { id: 'theory', label: 'Lý thuyết', icon: <TheoryModeIcon className="w-5 h-5" /> },
-      { id: 'flashcard', label: 'Flashcard', icon: <FlashcardIcon className="w-5 h-5" /> },
-      { id: 'mind_map', label: 'Sơ đồ tư duy', icon: <MindMapIcon className="w-5 h-5" /> },
-      { id: 'scramble_exam', label: 'Trộn đề', icon: <ShuffleIcon className="w-5 h-5" /> },
-      { id: 'similar_exam', label: 'Đề tương tự', icon: <CloneIcon className="w-5 h-5" /> },
-      { id: 'create_file', label: 'Tạo file', icon: <CreateFileIcon className="w-5 h-5" /> },
-      
-      // Tools
-      { id: 'calculator', label: 'Máy tính', icon: <CalculatorIcon className="w-5 h-5 text-orange-500"/>, action: () => setIsCalculatorOpen(true) },
-      { id: 'periodic_table', label: 'Bảng tuần hoàn', icon: <PeriodicTableIcon className="w-5 h-5 text-green-500"/>, action: () => setIsPeriodicTableOpen(true) },
-      { id: 'formula_notebook', label: 'Sổ công thức', icon: <NotebookIcon className="w-5 h-5 text-red-500"/>, action: () => setIsFormulaNotebookOpen(true) },
-      { id: 'unit_converter', label: 'Đổi đơn vị', icon: <ScaleIcon className="w-5 h-5 text-cyan-500"/>, action: () => setIsUnitConverterOpen(true) },
-      { id: 'pomodoro', label: 'Pomodoro', icon: <TimerIcon className="w-5 h-5 text-red-400"/>, action: () => setIsPomodoroOpen(true) },
-  ];
   
-  const toolsIds = ['whiteboard', 'probability', 'calculator', 'periodic_table', 'formula_notebook', 'unit_converter', 'pomodoro'];
-  const toolItems = menuItems.filter(m => toolsIds.includes(m.id));
-  const modeItems = menuItems.filter(m => !toolsIds.includes(m.id));
-
-  useEffect(() => {
-    const savedTheme = currentUser?.theme || localStorage.getItem('kl-ai-theme') as 'light' | 'dark' || 'light';
-    setTheme(savedTheme);
-  }, [currentUser]);
+  const activeChat = chatSessions.find(c => c.id === activeChatId);
   
-  useEffect(() => {
-    if (theme === 'dark') {
-      document.documentElement.classList.add('dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-    }
-    localStorage.setItem('kl-ai-theme', theme);
-  }, [theme]);
-
-  useEffect(() => {
-    if (currentUser?.isDemo) {
-        const savedCount = localStorage.getItem('kl-ai-demo-count');
-        if (savedCount) {
-            setDemoMessageCount(parseInt(savedCount, 10));
-        }
-    }
-  }, [currentUser]);
-
-  useEffect(() => {
-    if (currentUser?.backgroundUrl) {
-      document.body.style.backgroundImage = `url(${currentUser.backgroundUrl})`;
-      document.body.classList.add('has-custom-bg');
-    } else {
-      document.body.style.backgroundImage = 'none';
-      document.body.classList.remove('has-custom-bg');
-    }
-    return () => {
-      document.body.style.backgroundImage = 'none';
-      document.body.classList.remove('has-custom-bg');
-    };
-  }, [currentUser?.backgroundUrl]);
-  
-  useEffect(() => {
-    const defaultFont = "'Inter', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, 'Noto Sans', sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji'";
-    document.body.style.fontFamily = currentUser?.fontPreference || defaultFont;
-  }, [currentUser?.fontPreference]);
-
-  // Sync mode with active chat to ensure UI (input placeholder) is always correct
-  useEffect(() => {
-      if (!activeChatId) return;
-      const chat = chatSessions.find(c => c.id === activeChatId);
-      if (chat) {
-          const lastMsg = chat.messages[chat.messages.length - 1];
-          // Only sync if the mode is explicitly different to prevent loop or flickering
-          // and verify the mode is valid
-          if (lastMsg?.mode && lastMsg.mode !== mode) {
-              setMode(lastMsg.mode);
-          } else if (!lastMsg?.mode && mode !== 'chat') {
-              // Default fallback only if not already chat
-              setMode('chat');
-          }
-      }
-  }, [activeChatId, chatSessions]); // Removed 'mode' dependency to rely on internal check
-
-  const handleNewChat = useCallback(async (initialMode: Mode = 'chat', initialMessage?: Message) => {
-    if (!currentUser) return;
-    
-    let welcomeText = "Xin chào! Tôi là KL AI. Tôi có thể giúp gì cho bạn hôm nay?";
-    let title = 'Đoạn chat mới';
-
-    switch (initialMode) {
-        case 'create_exam': title = 'Tạo đề thi'; welcomeText = 'Chế độ Tạo Đề Thi đã được kích hoạt. Hãy cho tôi biết chủ đề, số lượng câu hỏi và độ khó bạn muốn.'; break;
-        case 'solve_exam': title = 'Giải đề'; welcomeText = 'Chế độ Giải Đề đã sẵn sàng. Vui lòng tải lên ảnh hoặc dán nội dung đề bài vào đây.'; break;
-        case 'grader': title = 'Chấm bài'; welcomeText = 'Chế độ Chấm Bài đã bật. Hãy tải lên hình ảnh bài làm của học sinh để tôi chấm điểm và nhận xét.'; break;
-        case 'chat_document': title = 'Chat với Tài liệu'; welcomeText = 'Chế độ Chat với Tài liệu. Hãy đính kèm file PDF, TXT... và đặt câu hỏi về nội dung bên trong.'; break;
-        case 'data_analysis': title = 'Phân tích Dữ liệu'; welcomeText = 'Chế độ Phân tích Dữ liệu. Hãy tải lên file Excel/CSV và yêu cầu tôi phân tích hoặc vẽ biểu đồ.'; break;
-        case 'create_schedule': title = 'Lập lịch học'; welcomeText = 'Chế độ Lập Lịch Học. Cung cấp các môn học, thời gian rảnh và mục tiêu của bạn để tôi tạo thời gian biểu.'; break;
-        case 'learn': title = 'Học tập'; welcomeText = 'Chế độ Học Tập. Hãy bắt đầu với một chủ đề bạn muốn tìm hiểu sâu hơn.'; break;
-        case 'exam': title = 'Thi thử'; welcomeText = 'Chế độ Thi Thử. Hãy cho tôi biết môn học và dạng bài bạn muốn luyện tập.'; break;
-        case 'theory': title = 'Hệ thống Lý thuyết'; welcomeText = 'Chế độ Lý Thuyết. Bạn muốn tôi hệ thống lại kiến thức về chủ đề nào?'; break;
-        case 'flashcard': title = 'Tạo Flashcard'; welcomeText = 'Chế độ Flashcard. Cung cấp chủ đề hoặc danh sách các thuật ngữ để tôi tạo bộ thẻ học cho bạn.'; break;
-        case 'mind_map': title = 'Sơ đồ tư duy'; welcomeText = 'Chế độ Sơ đồ Tư duy. Hãy nhập chủ đề chính và tôi sẽ phác thảo sơ đồ cho bạn.'; break;
-        case 'scramble_exam': title = 'Trộn đề'; welcomeText = 'Chế độ Trộn Đề. Vui lòng cung cấp đề gốc để tôi tạo ra các phiên bản khác nhau.'; break;
-        case 'similar_exam': title = 'Tạo đề tương tự'; welcomeText = 'Chế độ Tạo Đề Tương Tự. Gửi cho tôi một đề bài và tôi sẽ tạo một đề mới với cấu trúc và độ khó tương đương.'; break;
-        case 'create_file': title = 'Tạo file'; welcomeText = 'Chế độ Tạo File. Bạn muốn tôi tạo file gì? (Văn bản, code, v.v...)'; break;
-        case 'generate_image': title = 'Tạo ảnh AI'; welcomeText = 'Chế độ Tạo Ảnh AI. Hãy mô tả chi tiết hình ảnh bạn muốn tạo.'; break;
-        case 'rpg': title = 'Game Nhập Vai'; welcomeText = "Chào mừng lữ khách! Bạn muốn phiêu lưu trong bối cảnh nào (Trung cổ, Cyberpunk, Kiếm hiệp...)?"; break;
-        case 'roast': title = 'Chế độ Mỏ Hỗn'; welcomeText = "Ồ, lại thêm một kẻ muốn nghe sự thật trần trụi à? Được thôi, nói gì đi nào."; break;
-        case 'akinator': title = 'Thần đèn Akinator'; welcomeText = "Ta là Thần đèn Akinator. Hãy nghĩ về một nhân vật và ta sẽ đoán ra. Sẵn sàng chưa?"; break;
-        case 'mbti': title = 'Trắc nghiệm MBTI'; welcomeText = "Chào bạn. Hãy bắt đầu bài trắc nghiệm tính cách MBTI nhé. Bạn sẵn sàng chưa?"; break;
-    }
-
-    const welcomeMessage: Message = { role: 'model', text: welcomeText, mode: initialMode };
-
-    const newId = Date.now().toString();
-    const newChat: ChatSession = {
-      id: newId,
-      title: title,
-      messages: initialMessage ? [initialMessage] : [welcomeMessage],
-      isPinned: false,
-    };
-
-    if (initialMessage && initialMessage.role === 'user') {
-        newChat.messages.push({ role: 'model', text: '', timestamp: new Date().toISOString(), mode: initialMode });
-    }
-
-    setChatSessions(prev => [newChat, ...prev]);
-    setActiveChatId(newChat.id);
-    setMode(initialMode);
-    setIsMobileSidebarOpen(false);
-    
-    try {
-        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
-        const systemInstruction = getSystemInstruction(currentUser?.aiRole, currentUser?.aiTone, currentUser?.customInstruction, initialMode);
-        const chatInstance = ai.chats.create({
-            model: MODEL_NAME,
-            config: { systemInstruction },
-        });
-        chatInstances.current[newChat.id] = chatInstance;
-
-        if (initialMessage && initialMessage.role === 'user') {
-            setIsLoading(true);
-            chatInstance.sendMessageStream({ message: [{ text: initialMessage.text }] }).then(async (result) => {
-                 let fullText = '';
-                 for await (const chunk of result) {
-                     if (chunk.text) fullText += chunk.text;
-                     setChatSessions(prev => prev.map(chat => {
-                         if (chat.id !== newChat.id) return chat;
-                         const msgs = [...chat.messages];
-                         const last = { ...msgs[msgs.length - 1] };
-                         if (last.role === 'model') last.text = fullText;
-                         msgs[msgs.length - 1] = last;
-                         return { ...chat, messages: msgs };
-                     }));
-                 }
-            }).catch(err => {
-                console.error("Initial response failed", err);
-                setChatSessions(prev => prev.map(chat => {
-                    if (chat.id !== newChat.id) return chat;
-                    const msgs = [...chat.messages];
-                    const last = { ...msgs[msgs.length - 1] };
-                    last.isError = true;
-                    last.text = "Đã có lỗi xảy ra.";
-                    msgs[msgs.length - 1] = last;
-                    return { ...chat, messages: msgs };
-                }));
-            }).finally(() => setIsLoading(false));
-        }
-    } catch (error) {
-        console.error("Failed to initialize chat instance", error);
-    }
-
-    if (!currentUser.isDemo) {
-        api.saveChatSession(currentUser.username, newChat).catch(err => console.error("Background save failed", err));
-    }
-
-  }, [currentUser]);
-
-  // Load chats using API
-  useEffect(() => {
-    if (!currentUser) return;
-    
-    const loadChats = async () => {
-        try {
-            const loadedChats = await api.getChatSessions(currentUser.username);
-            
-            if (loadedChats.length > 0) {
-                setChatSessions(loadedChats);
-                setActiveChatId(prev => {
-                    if (prev && loadedChats.find(c => c.id === prev)) return prev; 
-                    const lastActive = loadedChats.find(p => !p.isPinned) || loadedChats[0];
-                    return lastActive.id;
-                });
-            } else {
-                handleNewChat();
-            }
-        } catch (e) {
-            console.error("Không thể tải lịch sử chat", e);
-            handleNewChat();
-        }
-    };
-    loadChats();
-  }, [currentUser.username, handleNewChat]);
-
-  // Initialize Chat Instances (GenAI)
-  useEffect(() => {
-    if (!currentUser) return;
-    
-    chatSessions.forEach(session => {
-        if (!chatInstances.current[session.id]) {
-            const lastMsgMode = session.messages[session.messages.length - 1]?.mode || 'chat';
-            
-            const systemInstruction = getSystemInstruction(
-                currentUser?.aiRole, 
-                currentUser?.aiTone, 
-                currentUser?.customInstruction, 
-                lastMsgMode
-            );
-            
-            const chatHistory = session.messages
-                .map(mapMessageToHistory)
-                // FIX: Corrected the type predicate to use `Role` type, resolving the TypeScript error.
-                .filter((content): content is { role: Role; parts: any[] } => content !== null);
-
-            const historyWithoutWelcome = chatHistory.length > 0 && chatHistory[0].role === 'model' 
-                ? chatHistory.slice(1) 
-                : chatHistory;
-
-            try {
-                const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
-                chatInstances.current[session.id] = ai.chats.create({
-                    model: MODEL_NAME,
-                    config: { systemInstruction },
-                    history: historyWithoutWelcome,
-                });
-            } catch (e) {
-                console.error("Lazy init failed for chat", session.id);
-            }
-        }
-    });
-  }, [chatSessions, currentUser]);
-
-  // Auto-save active chat to API when it changes
-  useEffect(() => {
-      if (!activeChatId || !currentUser || currentUser.isDemo) return;
-      const currentSession = chatSessions.find(c => c.id === activeChatId);
-      if (currentSession) {
-          const save = async () => {
-              try {
-                  await api.saveChatSession(currentUser.username, currentSession);
-              } catch (e) {
-                  console.error("Failed to sync chat", e);
-              }
-          };
-          save();
-      }
-  }, [chatSessions, activeChatId, currentUser]);
-
-
-  useEffect(() => {
-    if (chatContainerRef.current) {
-      chatContainerRef.current.scrollTo({
-        top: chatContainerRef.current.scrollHeight,
-        behavior: 'smooth'
-      });
-    }
-  }, [chatSessions, activeChatId, isLoading]);
-
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      const target = event.target as HTMLElement;
-
-      // FIX: Ignore clicks inside mobile menus (portals) to prevent premature closing
-      if (target.closest('.mobile-menu-content')) return;
-
-      // Close Features Popover
-      if (
-        featuresPopoverRef.current && 
-        !featuresPopoverRef.current.contains(target) &&
-        featuresButtonRef.current &&
-        !featuresButtonRef.current.contains(target)
-      ) {
-        setIsFeaturesPopoverOpen(false);
-      }
-      // Close Entertainment Popover
-      if (
-        entertainmentPopoverRef.current && 
-        !entertainmentPopoverRef.current.contains(target) &&
-        entertainmentButtonRef.current &&
-        !entertainmentButtonRef.current.contains(target)
-      ) {
-        setIsEntertainmentPopoverOpen(false);
-      }
-    };
-
-    document.addEventListener('mousedown', handleClickOutside);
-    document.addEventListener('touchstart', (e) => handleClickOutside(e as unknown as MouseEvent));
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-       document.removeEventListener('touchstart', (e) => handleClickOutside(e as unknown as MouseEvent));
-    };
-  }, []);
-
-
   const handleExtractText = useCallback(async (file: { data: string; mimeType: string }) => {
     try {
         const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
@@ -645,44 +397,14 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
                 ]
             }
         });
-        return response.text;
+        return response.text || null;
     } catch (error) {
         console.error("OCR failed:", error);
         return null;
     }
   }, []);
-  
-  // Helper to read spreadsheet files
-  const readSpreadsheet = (file: { data: string; mimeType: string }): Promise<string | null> => {
-      return new Promise((resolve) => {
-          try {
-              // Convert base64 to binary string
-              const binaryStr = atob(file.data);
-              const len = binaryStr.length;
-              const bytes = new Uint8Array(len);
-              for (let i = 0; i < len; i++) {
-                  bytes[i] = binaryStr.charCodeAt(i);
-              }
-              
-              // Read workbook
-              if (window.XLSX) {
-                  const workbook = window.XLSX.read(bytes.buffer, { type: 'array' });
-                  const firstSheetName = workbook.SheetNames[0];
-                  const worksheet = workbook.Sheets[firstSheetName];
-                  // Convert to CSV text
-                  const csv = window.XLSX.utils.sheet_to_csv(worksheet);
-                  resolve(csv);
-              } else {
-                  resolve(null);
-              }
-          } catch (e) {
-              console.error("Error reading spreadsheet", e);
-              resolve(null);
-          }
-      });
-  };
 
-  const handleSendMessage = useCallback(async (text: string, files: { name: string; data: string; mimeType: string }[] = []) => {
+  const handleSendMessage = useCallback(async (text: string, files: { name: string; data: string; mimeType: string }[] = [], options?: { modeOverride?: Mode }) => {
     if (!activeChatId || isLoading || !currentUser) return;
     
     // DEMO LIMIT CHECK
@@ -699,7 +421,9 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
         });
     }
 
-    if (!chatInstances.current[activeChatId] && mode !== 'generate_image') return;
+    const finalMode = options?.modeOverride || mode;
+
+    if (!chatInstances.current[activeChatId] && finalMode !== 'generate_image') return;
     if (!text.trim() && files.length === 0) return;
 
     const userMessage: Message = {
@@ -711,25 +435,24 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
             dataUrl: `data:${file.mimeType};base64,${file.data}`,
             mimeType: file.mimeType
         })),
-        mode: mode,
+        mode: finalMode,
     };
 
     // Optimistic Update: Add User Message
     setChatSessions(prev =>
         prev.map(chat =>
             chat.id === activeChatId
-                ? { ...chat, messages: [...chat.messages, userMessage, { role: 'model', text: '', timestamp: new Date().toISOString(), mode: mode }] }
+                ? { ...chat, messages: [...chat.messages, userMessage, { role: 'model', text: '', timestamp: new Date().toISOString(), mode: finalMode }] }
                 : chat
         )
     );
     setIsLoading(true);
     setError(null);
-    setFlashcardData(null);
 
     // Logic for Generating Title (only for first message)
     const generateTitleIfNeeded = async (promptText: string) => {
-        const activeChat = chatSessions.find(c => c.id === activeChatId);
-        const isFirstUserMessage = activeChat ? activeChat.messages.filter(m => m.role === 'user').length === 0 : false;
+        const activeChatForTitle = chatSessions.find(c => c.id === activeChatId);
+        const isFirstUserMessage = activeChatForTitle ? activeChatForTitle.messages.filter(m => m.role === 'user').length === 0 : false;
 
         if (isFirstUserMessage && promptText) {
             const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
@@ -741,21 +464,21 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
                     setChatSessions(prev =>
                         prev.map(chat => chat.id === activeChatId ? { ...chat, title: newTitle } : chat)
                     );
-                    if (activeChat && !currentUser.isDemo) {
-                        await api.saveChatSession(currentUser.username, { ...activeChat, title: newTitle });
+                    if (activeChatForTitle && !currentUser.isDemo) {
+                        await api.saveChatSession(currentUser.username, { ...activeChatForTitle, title: newTitle });
                     }
                 }
             } catch (titleError) { console.error("Không thể tạo tiêu đề", titleError); }
         }
     };
 
-    if (mode !== 'generate_image') {
+    if (finalMode !== 'generate_image') {
         generateTitleIfNeeded(text);
     }
 
     try {
         // --- IMAGE GENERATION MODE ---
-        if (mode === 'generate_image') {
+        if (finalMode === 'generate_image') {
              const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
              let generatedImage;
              
@@ -814,80 +537,40 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
         } 
         // --- STANDARD CHAT MODE ---
         else {
-            const activeChat = chatInstances.current[activeChatId];
+            const activeChatInstance = chatInstances.current[activeChatId];
             
             let messageTextToSend = text;
             let finalFiles = [...files];
-            let hasProcessedSpreadsheet = false;
 
             // Pre-process Excel files for Data Analysis
-            if (mode === 'data_analysis' && files.length > 0) {
+            if (finalMode === 'data_analysis' && files.length > 0) {
                  for (const file of files) {
                      if (file.mimeType.includes('spreadsheet') || file.mimeType.includes('excel') || file.name.endsWith('.csv')) {
                          const csvContent = await readSpreadsheet(file);
                          if (csvContent) {
                              messageTextToSend += `\n\n[Dữ liệu từ file ${file.name}]:\n${csvContent}\n`;
-                             // Don't send binary for spreadsheet since we sent text
                              finalFiles = finalFiles.filter(f => f !== file);
-                             hasProcessedSpreadsheet = true;
                          }
                      }
                  }
             }
 
-            if (mode === 'grader') {
-                const graderPrompt = `BẠN LÀ MỘT GIÁO VIÊN CHẤM THI CHUYÊN NGHIỆP VÀ KHẮT KHE.
-Nhiệm vụ: Phân tích hình ảnh bài làm của học sinh, chấm điểm và đưa ra nhận xét chi tiết.
-
-Quy tắc chấm:
-1. Thang điểm: 10 (Có thể lẻ đến 0.25).
-2. Soi lỗi: Tìm kỹ các lỗi chính tả, lỗi tính toán, logic sai, hoặc trình bày cẩu thả.
-3. Format trả về: BẮT BUỘC dùng định dạng Markdown sau:
-
-# KẾT QUẢ CHẤM THI
-## Điểm số: [Số điểm]/10 
-(Nếu điểm < 5: 🔴, 5-7: 🟡, >8: 🟢)
-
-## ❌ Các lỗi cần sửa:
-- **[Vị trí/Dòng]**: [Mô tả lỗi sai] -> [Cách sửa đúng]
-- ...
-
-## 💡 Lời khuyên của giáo viên:
-[Nhận xét tổng quan và động viên ngắn gọn]
-
-Lưu ý: Nếu chữ quá xấu không dịch được, hãy báo cho tôi biết để chụp lại, đừng cố chấm bừa.
-
-Nội dung bài làm (nếu có ảnh, hãy xem ảnh):
-`;
-                messageTextToSend = `${graderPrompt}\n${messageTextToSend}`;
-            } else if (mode === 'chat_document') {
-                const docPrompt = `BẠN LÀ TRỢ LÝ PHÂN TÍCH TÀI LIỆU (RAG - Retrieval Augmented Generation).
-Nhiệm vụ: Trả lời câu hỏi của người dùng CHỈ DỰA TRÊN nội dung file đính kèm (PDF, Text...).
-Tuyệt đối không bịa đặt thông tin nếu không có trong tài liệu.
-Nếu thông tin không có trong file, hãy trả lời: "Thông tin này không có trong tài liệu được cung cấp."
-Hãy trích dẫn (số trang, mục) nếu có thể.
-`;
-                messageTextToSend = `${docPrompt}\n---\nCâu hỏi: ${messageTextToSend}`;
-            } else if (mode === 'data_analysis') {
-                messageTextToSend = `PHÂN TÍCH DỮ LIỆU:
-Hãy phân tích dữ liệu được cung cấp và trả lời câu hỏi.
-Nếu được yêu cầu vẽ biểu đồ, hãy trả về JSON \`chart_json\` (như hướng dẫn hệ thống).
-\n---\nYêu cầu: ${messageTextToSend}`;
+            if (finalMode === 'grader') {
+                messageTextToSend = `BẠN LÀ MỘT GIÁO VIÊN CHẤM THI...\nNội dung bài làm: ${messageTextToSend}`;
+            } else if (finalMode === 'chat_document') {
+                messageTextToSend = `BẠN LÀ TRỢ LÝ PHÂN TÍCH TÀI LIỆU...\nCâu hỏi: ${messageTextToSend}`;
             }
 
             const parts: any[] = [{ text: messageTextToSend }];
             if (finalFiles.length > 0) {
                 finalFiles.forEach(file => {
                     parts.push({
-                        inlineData: {
-                            mimeType: file.mimeType,
-                            data: file.data
-                        }
+                        inlineData: { mimeType: file.mimeType, data: file.data }
                     });
                 });
             }
 
-            const result = await activeChat.sendMessageStream({ message: parts });
+            const result = await activeChatInstance.sendMessageStream({ message: parts });
             let fullText = '';
             
             for await (const chunk of result) {
@@ -899,67 +582,67 @@ Nếu được yêu cầu vẽ biểu đồ, hãy trả về JSON \`chart_json\`
                             if (chat.id !== activeChatId) return chat;
                             const newMessages = [...chat.messages];
                             const lastMsg = { ...newMessages[newMessages.length - 1] };
-                            if (lastMsg.role === 'model') {
-                                lastMsg.text = fullText;
-                            }
+                            if (lastMsg.role === 'model') lastMsg.text = fullText;
                             newMessages[newMessages.length - 1] = lastMsg;
                             return { ...chat, messages: newMessages };
                         })
                     );
                 }
             }
-
-            const flashcardData = parseFlashcardsFromResponse(fullText);
-            const chartConfig = parseSpecialJsonBlock(fullText, 'chart_json');
-            const scheduleData = parseSpecialJsonBlock(fullText, 'schedule_json');
-
+            
+            // Post-process the full response once streaming is complete
             setChatSessions(prev => 
                 prev.map(chat => {
                     if (chat.id !== activeChatId) return chat;
+
                     const newMessages = [...chat.messages];
                     const lastMsg = { ...newMessages[newMessages.length - 1] };
-                    
-                    if (flashcardData) lastMsg.flashcards = flashcardData.cards;
-                    if (chartConfig) lastMsg.chartConfig = chartConfig;
-                    if (scheduleData) lastMsg.scheduleData = scheduleData;
 
+                    if (finalMode === 'flashcard') {
+                        // Try to parse JSON first (New reliable method)
+                        const jsonBlock = parseSpecialJsonBlock(fullText, 'flashcard_json');
+                        
+                        if (jsonBlock && Array.isArray(jsonBlock)) {
+                             // Clean up text by removing the JSON block
+                             lastMsg.text = fullText.replace(/```flashcard_json[\s\S]*?```/, '').trim() || "Dưới đây là bộ flashcard bạn yêu cầu:";
+                             lastMsg.flashcards = jsonBlock;
+                        } else {
+                            // Fallback to Markdown Table parser (Legacy support)
+                            const parsed = parseFlashcardsFromResponse(fullText);
+                            if (parsed && parsed.cards.length > 0) {
+                                lastMsg.text = parsed.intro;
+                                lastMsg.flashcards = parsed.cards;
+                            } else {
+                                lastMsg.text = fullText + "\n\n(Không thể tạo bộ thẻ từ nội dung này. Vui lòng thử lại.)";
+                                lastMsg.isError = true;
+                            }
+                        }
+                    } else if (finalMode === 'mind_map') {
+                        const { intro, data } = parseMindMapFromResponse(fullText);
+                        lastMsg.text = intro;
+                        if (data) {
+                            lastMsg.mindMapData = data;
+                        } else if (fullText && fullText.trim().length > intro.trim().length) { // Heuristic: if there was content that looked like a list but failed to parse
+                            lastMsg.text = fullText + "\n\n(Không thể phân tích sơ đồ tư duy. Vui lòng thử lại.)";
+                            lastMsg.isError = true;
+                        }
+                    } else {
+                        // Default handling for other modes
+                        lastMsg.text = fullText;
+                        lastMsg.chartConfig = parseSpecialJsonBlock(fullText, 'chart_json');
+                        lastMsg.scheduleData = parseSpecialJsonBlock(fullText, 'schedule_json');
+                    }
+                    
                     newMessages[newMessages.length - 1] = lastMsg;
                     return { ...chat, messages: newMessages };
                 })
             );
-            
-            if (mode === 'mind_map') {
-                const mindMapData = parseMindMapFromResponse(fullText);
-                if (mindMapData.data) {
-                     setChatSessions(prev => 
-                        prev.map(chat => {
-                            if (chat.id !== activeChatId) return chat;
-                            const newMessages = [...chat.messages];
-                            const lastMsg = { ...newMessages[newMessages.length - 1] };
-                            lastMsg.mindMapData = mindMapData.data!;
-                            newMessages[newMessages.length - 1] = lastMsg;
-                            return { ...chat, messages: newMessages };
-                        })
-                    );
-                }
-            }
         }
 
     } catch (error: any) {
         console.error("Error processing request:", error);
         let errorMessage = "Đã có lỗi xảy ra khi xử lý yêu cầu. ";
-        
-        if (mode === 'generate_image') {
-            errorMessage = "Không thể tạo ảnh. Có thể do mô tả chứa nội dung không phù hợp hoặc dịch vụ đang bận.";
-            // Provide specific hint for Vercel deployment issues
-            if (!process.env.API_KEY) {
-                errorMessage += " (Lỗi: Thiếu API Key trong Environment Variables)";
-            } else if (error.message?.includes('403')) {
-                errorMessage += " (Lỗi: API Key không có quyền truy cập Imagen. Vui lòng kiểm tra cài đặt dự án Google Cloud)";
-            }
-        } else {
-            errorMessage += "(Kiểm tra API Key của bạn hoặc định dạng file)";
-        }
+        errorMessage += "(Kiểm tra API Key của bạn hoặc định dạng file)";
 
         setError(errorMessage);
         setChatSessions(prev => 
@@ -976,45 +659,232 @@ Nếu được yêu cầu vẽ biểu đồ, hãy trả về JSON \`chart_json\`
     } finally {
         setIsLoading(false);
     }
-  }, [activeChatId, chatSessions, mode, isLoading, currentUser, demoMessageCount, handleNewChat]);
+  }, [activeChatId, chatSessions, mode, isLoading, currentUser, demoMessageCount]);
 
+  const handleFlashcardsFromCurrentChat = useCallback(() => {
+    setIsFeaturesPopoverOpen(false); // Close menu
+    if (!activeChat) {
+        alert("Hãy bắt đầu một cuộc trò chuyện trước.");
+        return;
+    }
 
-  const handleDeleteChat = async (chatId: string, e: React.MouseEvent) => {
-      e.stopPropagation();
-      if (!currentUser) return;
+    const chatContent = activeChat.messages
+      .filter(m => m.text) // only messages with text
+      .slice(0, -1) // Exclude the current empty model message if it exists
+      .map(m => `${m.role === 'user' ? 'User' : 'AI'}: ${m.text}`)
+      .join('\n\n');
 
-      const newSessions = chatSessions.filter(c => c.id !== chatId);
-      setChatSessions(newSessions);
+    if (!chatContent) {
+      alert("Không có đủ nội dung trong cuộc trò chuyện để tóm tắt.");
+      return;
+    }
+    
+    // STRICT PROMPT FOR JSON
+    const prompt = `Dựa trên nội dung cuộc trò chuyện trên, hãy tạo danh sách Flashcard tóm tắt các ý chính.
+    
+    QUY TẮC QUAN TRỌNG (BẮT BUỘC TUÂN THỦ):
+    1. Output PHẢI là một khối mã JSON với nhãn \`flashcard_json\`.
+    2. KHÔNG trả về bảng markdown. KHÔNG trả về danh sách gạch đầu dòng.
+    3. Cấu trúc JSON:
+    \`\`\`flashcard_json
+    [
+      {"term": "Thuật ngữ 1", "definition": "Định nghĩa 1"},
+      {"term": "Câu hỏi 2", "definition": "Câu trả lời 2"}
+    ]
+    \`\`\`
+    `;
+    
+    handleSendMessage(prompt, [], { modeOverride: 'flashcard' });
+  }, [activeChat, handleSendMessage]);
+
+  const handleNewChat = useCallback(async (initialMode: Mode = 'chat', initialMessage?: Message) => {
+    if (!currentUser) return;
+    
+    let welcomeText = "Xin chào! Tôi là KL AI. Tôi có thể giúp gì cho bạn hôm nay?";
+    let title = 'Đoạn chat mới';
+
+    switch (initialMode) {
+        case 'create_exam': title = 'Tạo đề thi'; welcomeText = 'Chế độ Tạo Đề Thi đã được kích hoạt. Hãy cho tôi biết chủ đề, số lượng câu hỏi và độ khó bạn muốn.'; break;
+        case 'solve_exam': title = 'Giải đề'; welcomeText = 'Chế độ Giải Đề đã sẵn sàng. Vui lòng tải lên ảnh hoặc dán nội dung đề bài vào đây.'; break;
+        case 'grader': title = 'Chấm bài'; welcomeText = 'Chế độ Chấm Bài đã bật. Hãy tải lên hình ảnh bài làm của học sinh để tôi chấm điểm và nhận xét.'; break;
+        case 'chat_document': title = 'Chat với Tài liệu'; welcomeText = 'Chế độ Chat với Tài liệu. Hãy đính kèm file PDF, TXT... và đặt câu hỏi về nội dung bên trong.'; break;
+        case 'data_analysis': title = 'Phân tích Dữ liệu'; welcomeText = 'Chế độ Phân tích Dữ liệu. Hãy tải lên file Excel/CSV và yêu cầu tôi phân tích hoặc vẽ biểu đồ.'; break;
+        case 'create_schedule': title = 'Lập lịch học'; welcomeText = 'Chế độ Lập Lịch Học. Cung cấp các môn học, thời gian rảnh và mục tiêu của bạn để tôi tạo thời gian biểu.'; break;
+        case 'learn': title = 'Học tập'; welcomeText = 'Chế độ Học Tập. Hãy bắt đầu với một chủ đề bạn muốn tìm hiểu sâu hơn.'; break;
+        case 'exam': title = 'Thi thử'; welcomeText = 'Chế độ Thi Thử. Hãy cho tôi biết môn học và dạng bài bạn muốn luyện tập.'; break;
+        case 'theory': title = 'Hệ thống Lý thuyết'; welcomeText = 'Chế độ Lý Thuyết. Bạn muốn tôi hệ thống lại kiến thức về chủ đề nào?'; break;
+        case 'flashcard': title = 'Tạo Flashcard'; welcomeText = 'Chế độ Flashcard. Cung cấp chủ đề hoặc danh sách các thuật ngữ để tôi tạo bộ thẻ học cho bạn.'; break;
+        case 'mind_map': title = 'Sơ đồ tư duy'; welcomeText = 'Chế độ Sơ đồ Tư duy. Hãy nhập chủ đề chính và tôi sẽ phác thảo sơ đồ cho bạn.'; break;
+        case 'scramble_exam': title = 'Trộn đề'; welcomeText = 'Chế độ Trộn Đề. Vui lòng cung cấp đề gốc để tôi tạo ra các phiên bản khác nhau.'; break;
+        case 'similar_exam': title = 'Tạo đề tương tự'; welcomeText = 'Chế độ Tạo Đề Tương Tự. Gửi cho tôi một đề bài và tôi sẽ tạo một đề mới với cấu trúc và độ khó tương đương.'; break;
+        case 'create_file': title = 'Tạo file'; welcomeText = 'Chế độ Tạo File. Bạn muốn tôi tạo file gì? (Văn bản, code, v.v...)'; break;
+        case 'generate_image': title = 'Tạo ảnh AI'; welcomeText = 'Chế độ Tạo Ảnh AI. Hãy mô tả chi tiết hình ảnh bạn muốn tạo.'; break;
+        case 'rpg': title = 'Game Nhập Vai'; welcomeText = "Chào mừng lữ khách! Bạn muốn phiêu lưu trong bối cảnh nào (Trung cổ, Cyberpunk, Kiếm hiệp...)?"; break;
+        case 'roast': title = 'Chế độ Mỏ Hỗn'; welcomeText = "Ồ, lại thêm một kẻ muốn nghe sự thật trần trụi à? Được thôi, nói gì đi nào."; break;
+        case 'akinator': title = 'Thần đèn Akinator'; welcomeText = "Ta là Thần đèn Akinator. Hãy nghĩ về một nhân vật và ta sẽ đoán ra. Sẵn sàng chưa?"; break;
+        case 'mbti': title = 'Trắc nghiệm MBTI'; welcomeText = "Chào bạn. Hãy bắt đầu bài trắc nghiệm tính cách MBTI nhé. Bạn sẵn sàng chưa?"; break;
+    }
+
+    const welcomeMessage: Message = { role: 'model', text: welcomeText, mode: initialMode };
+
+    const newId = Date.now().toString();
+    const newChat: ChatSession = {
+      id: newId,
+      title: title,
+      messages: initialMessage ? [initialMessage] : [welcomeMessage],
+      isPinned: false,
+    };
+
+    if (initialMessage && initialMessage.role === 'user') {
+        newChat.messages.push({ role: 'model', text: '', timestamp: new Date().toISOString(), mode: initialMode });
+    }
+
+    setChatSessions(prev => [newChat, ...prev]);
+    setActiveChatId(newId);
+    setMode(initialMode);
+    setIsMobileSidebarOpen(false);
+    
+    try {
+        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
+        const systemInstruction = getSystemInstruction(currentUser?.aiRole, currentUser?.aiTone, currentUser?.customInstruction, initialMode);
+        const chatInstance = ai.chats.create({
+            model: MODEL_NAME,
+            config: { systemInstruction },
+        });
+        chatInstances.current[newChat.id] = chatInstance;
+
+        if (initialMessage && initialMessage.role === 'user') {
+            setIsLoading(true);
+            chatInstance.sendMessageStream({ message: [{ text: initialMessage.text }] }).then(async (result) => {
+                 let fullText = '';
+                 for await (const chunk of result) {
+                     if (chunk.text) fullText += chunk.text;
+                     setChatSessions(prev => prev.map(chat => {
+                         if (chat.id !== newChat.id) return chat;
+                         const msgs = [...chat.messages];
+                         const last = { ...msgs[msgs.length - 1] };
+                         if (last.role === 'model') last.text = fullText;
+                         msgs[msgs.length - 1] = last;
+                         return { ...chat, messages: msgs };
+                     }));
+                 }
+            }).catch(err => {
+                console.error("Initial response failed", err);
+                setChatSessions(prev => prev.map(chat => {
+                    if (chat.id !== newChat.id) return chat;
+                    const msgs = [...chat.messages];
+                    const last = { ...msgs[msgs.length - 1] };
+                    last.isError = true;
+                    last.text = "Đã có lỗi xảy ra.";
+                    msgs[msgs.length - 1] = last;
+                    return { ...chat, messages: msgs };
+                }));
+            }).finally(() => setIsLoading(false));
+        }
+    } catch (error) {
+        console.error("Failed to initialize chat instance", error);
+    }
+
+    if (!currentUser.isDemo) {
+        api.saveChatSession(currentUser.username, newChat).catch(err => console.error("Background save failed", err));
+    }
+
+  }, [currentUser]);
+
+  const menuItems = [
+      { id: 'chat', label: 'Trò chuyện', icon: <UserIcon className="w-5 h-5" /> },
+      { id: 'chat_document', label: 'Chat tài liệu', icon: <DocumentSearchIcon className="w-5 h-5 text-blue-500" /> },
+      { id: 'data_analysis', label: 'Phân tích Dữ liệu', icon: <ChartIcon className="w-5 h-5 text-teal-500" /> },
+      { id: 'generate_image', label: 'Tạo ảnh AI', icon: <MagicIcon className="w-5 h-5 text-purple-500" /> },
+      { id: 'whiteboard', label: 'Bảng trắng', icon: <PresentationIcon className="w-5 h-5 text-blue-500" />, action: () => setIsWhiteboardOpen(true) },
+      { id: 'probability', label: 'Xác suất', icon: <DiceIcon className="w-5 h-5 text-indigo-500" />, action: () => setIsProbabilitySimOpen(true) },
+      { id: 'grader', label: 'Chấm bài', icon: <GraderIcon className="w-5 h-5 text-green-600" /> },
+      { id: 'create_exam', label: 'Tạo đề thi', icon: <CreateExamIcon className="w-5 h-5" /> },
+      { id: 'solve_exam', label: 'Giải đề', icon: <SolveExamIcon className="w-5 h-5" /> },
+      { id: 'create_schedule', label: 'Lập lịch', icon: <CreateScheduleIcon className="w-5 h-5" /> },
+      { id: 'learn', label: 'Học tập', icon: <LearnModeIcon className="w-5 h-5" /> },
+      { id: 'exam', label: 'Thi thử', icon: <ExamModeIcon className="w-5 h-5" /> },
+      { id: 'theory', label: 'Lý thuyết', icon: <TheoryModeIcon className="w-5 h-5" /> },
+      { id: 'flashcard', label: 'Tạo Flashcard', icon: <FlashcardIcon className="w-5 h-5" /> },
+      { id: 'flashcard_from_chat', label: 'Flashcard từ Chat', icon: <MagicIcon className="w-5 h-5 text-purple-500"/>, action: handleFlashcardsFromCurrentChat },
+      { id: 'mind_map', label: 'Sơ đồ tư duy', icon: <MindMapIcon className="w-5 h-5" /> },
+      { id: 'scramble_exam', label: 'Trộn đề', icon: <ShuffleIcon className="w-5 h-5" /> },
+      { id: 'similar_exam', label: 'Đề tương tự', icon: <CloneIcon className="w-5 h-5" /> },
+      { id: 'create_file', label: 'Tạo file', icon: <CreateFileIcon className="w-5 h-5" /> },
       
-      if (!currentUser.isDemo) {
-          await api.deleteChatSession(currentUser.username, chatId);
-      }
-
-      if (newSessions.length === 0) {
-          handleNewChat();
-      } else if (activeChatId === chatId) {
-          setActiveChatId(newSessions[0].id);
-      }
-  };
+      // Tools
+      { id: 'calculator', label: 'Máy tính', icon: <CalculatorIcon className="w-5 h-5 text-orange-500"/>, action: () => setIsCalculatorOpen(true) },
+      { id: 'periodic_table', label: 'Bảng tuần hoàn', icon: <PeriodicTableIcon className="w-5 h-5 text-green-500"/>, action: () => setIsPeriodicTableOpen(true) },
+      { id: 'formula_notebook', label: 'Sổ công thức', icon: <NotebookIcon className="w-5 h-5 text-red-500"/>, action: () => setIsFormulaNotebookOpen(true) },
+      { id: 'unit_converter', label: 'Đổi đơn vị', icon: <ScaleIcon className="w-5 h-5 text-cyan-500"/>, action: () => setIsUnitConverterOpen(true) },
+      { id: 'pomodoro', label: 'Pomodoro', icon: <TimerIcon className="w-5 h-5 text-red-400"/>, action: () => setIsPomodoroOpen(true) },
+  ];
   
-  const togglePin = async (chatId: string, e: React.MouseEvent) => {
-      e.stopPropagation();
-      if (!currentUser) return;
+  const toolsIds = ['whiteboard', 'probability', 'calculator', 'periodic_table', 'formula_notebook', 'unit_converter', 'pomodoro'];
+  const toolItems = menuItems.filter(m => toolsIds.includes(m.id));
+  // Items with an action that are not just opening a tool are now handled as modes with actions
+  const modeItems = menuItems.filter(m => !toolsIds.includes(m.id));
 
-      let updatedSession: ChatSession | undefined;
-      setChatSessions(prev => prev.map(c => {
-          if (c.id === chatId) {
-              updatedSession = { ...c, isPinned: !c.isPinned };
-              return updatedSession;
+  useEffect(() => {
+    const savedTheme = currentUser?.theme || localStorage.getItem('kl-ai-theme') as 'light' | 'dark' || 'light';
+    setTheme(savedTheme);
+  }, [currentUser]);
+  
+  useEffect(() => {
+    if (theme === 'dark') {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+    localStorage.setItem('kl-ai-theme', theme);
+  }, [theme]);
+
+  useEffect(() => {
+    if (currentUser?.isDemo) {
+        const savedCount = localStorage.getItem('kl-ai-demo-count');
+        if (savedCount) {
+            setDemoMessageCount(parseInt(savedCount, 10));
+        }
+    }
+  }, [currentUser]);
+
+  useEffect(() => {
+    if (currentUser?.backgroundUrl) {
+      document.body.style.backgroundImage = `url(${currentUser.backgroundUrl})`;
+      document.body.classList.add('has-custom-bg');
+    } else {
+      document.body.style.backgroundImage = 'none';
+      document.body.classList.remove('has-custom-bg');
+    }
+    return () => {
+      document.body.style.backgroundImage = 'none';
+      document.body.classList.remove('has-custom-bg');
+    };
+  }, [currentUser?.backgroundUrl]);
+  
+  useEffect(() => {
+    const defaultFont = "'Inter', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, 'Noto Sans', sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji'";
+    document.body.style.fontFamily = currentUser?.fontPreference || defaultFont;
+  }, [currentUser?.fontPreference]);
+
+  // Sync mode with active chat to ensure UI is always correct when switching chats
+  useEffect(() => {
+      if (!activeChatId) return;
+      const chat = chatSessions.find(c => c.id === activeChatId);
+      if (chat && chat.messages.length > 0) {
+          // Find the last message that has a mode defined, starting from the end.
+          const lastMessageWithMode = [...chat.messages].reverse().find(msg => msg.mode);
+          const chatMode = lastMessageWithMode?.mode || 'chat'; // Default to 'chat'
+
+          if (chatMode !== mode) {
+              setMode(chatMode);
           }
-          return c;
-      }));
-      
-      if (updatedSession && !currentUser.isDemo) {
-          await api.saveChatSession(currentUser.username, updatedSession);
+      } else if (!chat && chatSessions.length > 0) {
+          // If active chat is gone (e.g., deleted), switch to the first available chat
+          setActiveChatId(chatSessions[0].id);
       }
-  };
-  
+  }, [activeChatId, chatSessions, mode]);
+
   const handleUpdateUserInternal = async (updates: Partial<User>) => {
       if (!currentUser) return false;
       try {
@@ -1031,7 +901,6 @@ Nếu được yêu cầu vẽ biểu đồ, hãy trả về JSON \`chart_json\`
                chatSessions.forEach(session => {
                    const chatHistory = session.messages
                        .map(mapMessageToHistory)
-                       // FIX: Corrected the type predicate to use `Role` type, resolving the TypeScript error.
                        .filter((content): content is { role: Role; parts: any[] } => content !== null);
                     
                     const historyWithoutWelcome = chatHistory.length > 0 && chatHistory[0].role === 'model'
@@ -1155,7 +1024,44 @@ Nếu được yêu cầu vẽ biểu đồ, hãy trả về JSON \`chart_json\`
   };
 
 
-  const activeChat = chatSessions.find(c => c.id === activeChatId);
+  const handleDeleteChat = useCallback(async (chatId: string, e: React.MouseEvent) => {
+      e.stopPropagation();
+      if (!currentUser) return;
+
+      const newSessions = chatSessions.filter(c => c.id !== chatId);
+      setChatSessions(newSessions);
+      
+      if (!currentUser.isDemo) {
+          await api.deleteChatSession(currentUser.username, chatId);
+      }
+
+      if (newSessions.length === 0) {
+          handleNewChat();
+      } else if (activeChatId === chatId) {
+          setActiveChatId(newSessions[0].id);
+      }
+  }, [currentUser, chatSessions, activeChatId, handleNewChat]);
+  
+  const togglePin = useCallback(async (chatId: string, e: React.MouseEvent) => {
+      e.stopPropagation();
+      if (!currentUser) return;
+
+      let updatedSession: ChatSession | undefined;
+      const newSessions = chatSessions.map(c => {
+          if (c.id === chatId) {
+              updatedSession = { ...c, isPinned: !c.isPinned };
+              return updatedSession;
+          }
+          return c;
+      });
+      setChatSessions(newSessions);
+      
+      if (updatedSession && !currentUser.isDemo) {
+          await api.saveChatSession(currentUser.username, updatedSession);
+      }
+  }, [currentUser, chatSessions]);
+
+
   const pinnedChats = chatSessions.filter(c => c.isPinned);
   const recentChats = chatSessions.filter(c => !c.isPinned).filter(c => c.title.toLowerCase().includes(searchQuery.toLowerCase()));
 
@@ -1371,7 +1277,7 @@ Nếu được yêu cầu vẽ biểu đồ, hãy trả về JSON \`chart_json\`
                       {/* Desktop Menu (Dropdown) */}
                       {isFeaturesPopoverOpen && (
                           <div className="hidden sm:flex absolute z-50 bg-card border border-border shadow-xl p-2 animate-slide-in-up bottom-auto top-full left-auto right-0 mt-2 w-64 rounded-xl flex-col gap-1 max-h-[60vh] overflow-y-auto origin-top-right scrollbar-thin scrollbar-thumb-border">
-                              {menuItems.map((m) => (
+                              {modeItems.map((m) => (
                                   <button
                                       key={m.id}
                                       onClick={() => { 
@@ -1423,16 +1329,20 @@ Nếu được yêu cầu vẽ biểu đồ, hãy trả về JSON \`chart_json\`
                                     onClick={(e) => {
                                         e.preventDefault();
                                         e.stopPropagation();
-                                        // DO NOT CLOSE MENU - User closes manually with Red X
-                                        handleNewChat(m.id as Mode);
+                                        if (m.action) {
+                                            m.action();
+                                        } else {
+                                            handleNewChat(m.id as Mode);
+                                        }
+                                        setIsFeaturesPopoverOpen(false);
                                     }}
                                     className={`flex flex-col items-center justify-center gap-2 p-4 rounded-xl border transition-all active:scale-95
-                                        ${mode === m.id 
+                                        ${mode === m.id && !m.action
                                             ? 'bg-brand/10 border-brand text-brand font-semibold shadow-sm' 
                                             : 'bg-input-bg border-transparent hover:bg-sidebar text-text-secondary'}
                                     `}
                                 >
-                                    <div className={`p-2 rounded-full ${mode === m.id ? 'bg-brand text-white' : 'bg-card text-current'}`}>
+                                    <div className={`p-2 rounded-full ${mode === m.id && !m.action ? 'bg-brand text-white' : 'bg-card text-current'}`}>
                                         {m.icon}
                                     </div>
                                     <span className="text-sm truncate w-full text-center">{m.label}</span>
@@ -1451,6 +1361,7 @@ Nếu được yêu cầu vẽ biểu đồ, hãy trả về JSON \`chart_json\`
                                         e.preventDefault();
                                         e.stopPropagation();
                                         if (m.action) m.action();
+                                        setIsFeaturesPopoverOpen(false);
                                     }}
                                     className="flex flex-col items-center justify-center gap-2 p-4 rounded-xl bg-input-bg hover:bg-sidebar border border-transparent text-text-secondary transition-all active:scale-95"
                                 >
@@ -1545,6 +1456,7 @@ Nếu được yêu cầu vẽ biểu đồ, hãy trả về JSON \`chart_json\`
                     onSendMessage={handleSendMessage} 
                     isLoading={isLoading}
                     placeholder={
+                        mode === 'flashcard' ? "Nhập chủ đề để tạo flashcard (VD: 10 từ vựng IT)..." :
                         mode === 'generate_image' ? "Mô tả hình ảnh bạn muốn vẽ..." :
                         mode === 'create_exam' ? "Nhập chủ đề, số lượng câu hỏi, độ khó..." :
                         mode === 'solve_exam' ? "Chụp ảnh hoặc dán nội dung đề bài..." :
