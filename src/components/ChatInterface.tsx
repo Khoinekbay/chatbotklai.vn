@@ -2,11 +2,11 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { GoogleGenAI, Chat } from '@google/genai';
-import { type Message, type ChatSession, type User, type MindMapNode, type Mode, type FollowUpAction, type Role } from '../types';
+import { type Message, type ChatSession, type User, type MindMapNode, type Mode, type FollowUpAction } from '../types';
 import ChatMessage from './ChatMessage';
 import ChatInput from './ChatInput';
 import TypingIndicator from './TypingIndicator';
-import { CreateExamIcon, SolveExamIcon, CreateScheduleIcon, NewChatIcon, KlAiLogo, UserIcon, LogoutIcon, EditIcon, SearchIcon, PinIcon, LearnModeIcon, ExamModeIcon, DownloadIcon, SunIcon, MoonIcon, TheoryModeIcon, MenuIcon, FeaturesIcon, FlashcardIcon, ShuffleIcon, CloneIcon, CalculatorIcon, PeriodicTableIcon, MinimizeIcon, MaximizeIcon, RestoreIcon, CreateFileIcon, MindMapIcon, TrashIcon, SettingsIcon, MoreHorizontalIcon, KeyIcon, MagicIcon, PresentationIcon, GraderIcon, DocumentSearchIcon, TimerIcon, ChartIcon, LockIcon, ScaleIcon, DiceIcon, NotebookIcon, GamepadIcon, XIcon, DownloadAppIcon, ShareIOSIcon } from './Icons';
+import { CreateExamIcon, SolveExamIcon, CreateScheduleIcon, NewChatIcon, KlAiLogo, UserIcon, LogoutIcon, EditIcon, SearchIcon, PinIcon, LearnModeIcon, ExamModeIcon, DownloadIcon, SunIcon, MoonIcon, TheoryModeIcon, MenuIcon, FeaturesIcon, FlashcardIcon, ShuffleIcon, CloneIcon, CalculatorIcon, PeriodicTableIcon, MinimizeIcon, MaximizeIcon, RestoreIcon, CreateFileIcon, MindMapIcon, TrashIcon, SettingsIcon, MoreHorizontalIcon, KeyIcon, MagicIcon, PresentationIcon, GraderIcon, DocumentSearchIcon, TimerIcon, ChartIcon, LockIcon, ScaleIcon, DiceIcon, NotebookIcon, GamepadIcon, XIcon } from './Icons';
 import { api } from '../utils/api';
 
 // Lazy load heavy components
@@ -29,6 +29,10 @@ const EntertainmentMenu = React.lazy(() => import('./EntertainmentMenu'));
 
 const DEMO_MESSAGE_LIMIT = 10;
 const MODEL_NAME = 'gemini-2.5-flash';
+// Primary model
+const IMAGE_MODEL_NAME = 'imagen-4.0-generate-001';
+// Fallback model if 4.0 fails
+const IMAGE_MODEL_FALLBACK = 'imagen-3.0-generate-001';
 
 declare global {
     interface Window {
@@ -238,7 +242,7 @@ const mindMapToMarkdown = (node: MindMapNode, depth = 0): string => {
     const indent = '  '.repeat(depth);
     let result = `${indent}- ${node.name}\n`;
     if (node.children) {
-        result += node.children.map((child: MindMapNode) => mindMapToMarkdown(child, depth + 1)).join('');
+        result += node.children.map(child => mindMapToMarkdown(child, depth + 1)).join('');
     }
     return result;
 };
@@ -253,7 +257,7 @@ const mapMessageToHistory = (m: Message) => {
    }
 
    if (m.files) {
-       m.files.forEach((file: any) => {
+       m.files.forEach(file => {
            if (file.mimeType.startsWith('image/') || file.mimeType === 'application/pdf' || file.mimeType.startsWith('text/')) {
                const base64Data = file.dataUrl.split(',')[1];
                parts.push({
@@ -308,17 +312,14 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
   const [showDemoLimitModal, setShowDemoLimitModal] = useState(false);
   const [showLoginPromptModal, setShowLoginPromptModal] = useState(false);
 
-  // PWA Install Prompt
-  const [installPrompt, setInstallPrompt] = useState<any>(null);
-  const [showInstallInstructions, setShowInstallInstructions] = useState(false);
-  const [isStandalone, setIsStandalone] = useState(false);
-  const [isIOS, setIsIOS] = useState(false);
 
   const chatInstances = useRef<{ [key: string]: Chat }>({});
   const chatContainerRef = useRef<HTMLDivElement>(null);
   const featuresPopoverRef = useRef<HTMLDivElement>(null);
+  // FIX: Changed ref type from HTMLDivElement to HTMLButtonElement to match the element it's attached to.
   const featuresButtonRef = useRef<HTMLButtonElement>(null);
   const entertainmentPopoverRef = useRef<HTMLDivElement>(null);
+  // FIX: Changed ref type from HTMLDivElement to HTMLButtonElement to match the element it's attached to.
   const entertainmentButtonRef = useRef<HTMLButtonElement>(null);
 
   const menuItems = [
@@ -350,8 +351,8 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
   ];
   
   const toolsIds = ['whiteboard', 'probability', 'calculator', 'periodic_table', 'formula_notebook', 'unit_converter', 'pomodoro'];
-  const toolItems = menuItems.filter((m: any) => toolsIds.includes(m.id));
-  const modeItems = menuItems.filter((m: any) => !toolsIds.includes(m.id));
+  const toolItems = menuItems.filter(m => toolsIds.includes(m.id));
+  const modeItems = menuItems.filter(m => !toolsIds.includes(m.id));
 
   useEffect(() => {
     const savedTheme = currentUser?.theme || localStorage.getItem('kl-ai-theme') as 'light' | 'dark' || 'light';
@@ -375,42 +376,6 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
         }
     }
   }, [currentUser]);
-  
-  // PWA Install Listener
-  useEffect(() => {
-      const handleBeforeInstallPrompt = (e: any) => {
-          e.preventDefault();
-          setInstallPrompt(e);
-      };
-      
-      window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
-      
-      // Check iOS
-      const iOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
-      setIsIOS(iOS);
-
-      // Check Standalone
-      const isStandaloneMode = window.matchMedia('(display-mode: standalone)').matches || (window.navigator as any).standalone === true;
-      setIsStandalone(isStandaloneMode);
-
-      return () => {
-          window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
-      };
-  }, []);
-
-  const handleInstallClick = () => {
-      if (installPrompt) {
-          installPrompt.prompt();
-          installPrompt.userChoice.then((choiceResult: any) => {
-              if (choiceResult.outcome === 'accepted') {
-                  setInstallPrompt(null);
-              }
-          });
-      } else {
-          // Fallback logic for iOS or desktop
-          setShowInstallInstructions(true);
-      }
-  };
 
   useEffect(() => {
     if (currentUser?.backgroundUrl) {
@@ -451,39 +416,50 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
   const handleNewChat = useCallback(async (initialMode: Mode = 'chat', initialMessage?: Message) => {
     if (!currentUser) return;
     
-    const isSpecialMode = ['rpg', 'roast', 'akinator', 'tarot', 'mbti'].includes(initialMode);
-    const title = isSpecialMode ? `Chế độ ${initialMode.toUpperCase()}` : 'Đoạn chat mới';
+    let welcomeText = "Xin chào! Tôi là KL AI. Tôi có thể giúp gì cho bạn hôm nay?";
+    let title = 'Đoạn chat mới';
 
-    // 1. Create the object synchronously
+    switch (initialMode) {
+        case 'create_exam': title = 'Tạo đề thi'; welcomeText = 'Chế độ Tạo Đề Thi đã được kích hoạt. Hãy cho tôi biết chủ đề, số lượng câu hỏi và độ khó bạn muốn.'; break;
+        case 'solve_exam': title = 'Giải đề'; welcomeText = 'Chế độ Giải Đề đã sẵn sàng. Vui lòng tải lên ảnh hoặc dán nội dung đề bài vào đây.'; break;
+        case 'grader': title = 'Chấm bài'; welcomeText = 'Chế độ Chấm Bài đã bật. Hãy tải lên hình ảnh bài làm của học sinh để tôi chấm điểm và nhận xét.'; break;
+        case 'chat_document': title = 'Chat với Tài liệu'; welcomeText = 'Chế độ Chat với Tài liệu. Hãy đính kèm file PDF, TXT... và đặt câu hỏi về nội dung bên trong.'; break;
+        case 'data_analysis': title = 'Phân tích Dữ liệu'; welcomeText = 'Chế độ Phân tích Dữ liệu. Hãy tải lên file Excel/CSV và yêu cầu tôi phân tích hoặc vẽ biểu đồ.'; break;
+        case 'create_schedule': title = 'Lập lịch học'; welcomeText = 'Chế độ Lập Lịch Học. Cung cấp các môn học, thời gian rảnh và mục tiêu của bạn để tôi tạo thời gian biểu.'; break;
+        case 'learn': title = 'Học tập'; welcomeText = 'Chế độ Học Tập. Hãy bắt đầu với một chủ đề bạn muốn tìm hiểu sâu hơn.'; break;
+        case 'exam': title = 'Thi thử'; welcomeText = 'Chế độ Thi Thử. Hãy cho tôi biết môn học và dạng bài bạn muốn luyện tập.'; break;
+        case 'theory': title = 'Hệ thống Lý thuyết'; welcomeText = 'Chế độ Lý Thuyết. Bạn muốn tôi hệ thống lại kiến thức về chủ đề nào?'; break;
+        case 'flashcard': title = 'Tạo Flashcard'; welcomeText = 'Chế độ Flashcard. Cung cấp chủ đề hoặc danh sách các thuật ngữ để tôi tạo bộ thẻ học cho bạn.'; break;
+        case 'mind_map': title = 'Sơ đồ tư duy'; welcomeText = 'Chế độ Sơ đồ Tư duy. Hãy nhập chủ đề chính và tôi sẽ phác thảo sơ đồ cho bạn.'; break;
+        case 'scramble_exam': title = 'Trộn đề'; welcomeText = 'Chế độ Trộn Đề. Vui lòng cung cấp đề gốc để tôi tạo ra các phiên bản khác nhau.'; break;
+        case 'similar_exam': title = 'Tạo đề tương tự'; welcomeText = 'Chế độ Tạo Đề Tương Tự. Gửi cho tôi một đề bài và tôi sẽ tạo một đề mới với cấu trúc và độ khó tương đương.'; break;
+        case 'create_file': title = 'Tạo file'; welcomeText = 'Chế độ Tạo File. Bạn muốn tôi tạo file gì? (Văn bản, code, v.v...)'; break;
+        case 'generate_image': title = 'Tạo ảnh AI'; welcomeText = 'Chế độ Tạo Ảnh AI. Hãy mô tả chi tiết hình ảnh bạn muốn tạo.'; break;
+        case 'rpg': title = 'Game Nhập Vai'; welcomeText = "Chào mừng lữ khách! Bạn muốn phiêu lưu trong bối cảnh nào (Trung cổ, Cyberpunk, Kiếm hiệp...)?"; break;
+        case 'roast': title = 'Chế độ Mỏ Hỗn'; welcomeText = "Ồ, lại thêm một kẻ muốn nghe sự thật trần trụi à? Được thôi, nói gì đi nào."; break;
+        case 'akinator': title = 'Thần đèn Akinator'; welcomeText = "Ta là Thần đèn Akinator. Hãy nghĩ về một nhân vật và ta sẽ đoán ra. Sẵn sàng chưa?"; break;
+        case 'mbti': title = 'Trắc nghiệm MBTI'; welcomeText = "Chào bạn. Hãy bắt đầu bài trắc nghiệm tính cách MBTI nhé. Bạn sẵn sàng chưa?"; break;
+    }
+
+    const welcomeMessage: Message = { role: 'model', text: welcomeText, mode: initialMode };
+
     const newId = Date.now().toString();
     const newChat: ChatSession = {
       id: newId,
       title: title,
-      messages: initialMessage 
-        ? [initialMessage] 
-        : [{ role: 'model', text: "Xin chào! Tôi là KL AI. Tôi có thể giúp gì cho bạn hôm nay?", mode: initialMode }],
+      messages: initialMessage ? [initialMessage] : [welcomeMessage],
       isPinned: false,
     };
-    
-    if (isSpecialMode && !initialMessage) {
-         if (initialMode === 'rpg') newChat.messages = [{ role: 'model', text: "Chào mừng lữ khách! Bạn muốn phiêu lưu trong bối cảnh nào (Trung cổ, Cyberpunk, Kiếm hiệp...)?", mode: initialMode }];
-         if (initialMode === 'roast') newChat.messages = [{ role: 'model', text: "Ồ, lại thêm một kẻ muốn nghe sự thật trần trụi à? Được thôi, nói gì đi nào.", mode: initialMode }];
-         if (initialMode === 'akinator') newChat.messages = [{ role: 'model', text: "Ta là Thần đèn Akinator. Hãy nghĩ về một nhân vật và ta sẽ đoán ra. Sẵn sàng chưa?", mode: initialMode }];
-         if (initialMode === 'mbti') newChat.messages = [{ role: 'model', text: "Chào bạn. Hãy bắt đầu bài trắc nghiệm tính cách MBTI nhé. Bạn sẵn sàng chưa?", mode: initialMode }];
-    }
 
     if (initialMessage && initialMessage.role === 'user') {
         newChat.messages.push({ role: 'model', text: '', timestamp: new Date().toISOString(), mode: initialMode });
     }
 
-    // 2. UPDATE UI IMMEDIATELY
     setChatSessions(prev => [newChat, ...prev]);
     setActiveChatId(newChat.id);
-    setMode(initialMode); // Explicitly set mode here to be safe
-    
+    setMode(initialMode);
     setIsMobileSidebarOpen(false);
     
-    // 3. Initialize Chat Instance (Safely)
     try {
         const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
         const systemInstruction = getSystemInstruction(currentUser?.aiRole, currentUser?.aiTone, currentUser?.customInstruction, initialMode);
@@ -493,11 +469,8 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
         });
         chatInstances.current[newChat.id] = chatInstance;
 
-        // Initial message handling if needed
         if (initialMessage && initialMessage.role === 'user') {
             setIsLoading(true);
-            // ... logic for initial message sending ...
-            // (Optimized out for brevity as the core issue is state update)
             chatInstance.sendMessageStream({ message: [{ text: initialMessage.text }] }).then(async (result) => {
                  let fullText = '';
                  for await (const chunk of result) {
@@ -526,10 +499,8 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
         }
     } catch (error) {
         console.error("Failed to initialize chat instance", error);
-        // Even if AI init fails, the UI should still switch to the new chat screen
     }
 
-    // 4. Save to API in Background
     if (!currentUser.isDemo) {
         api.saveChatSession(currentUser.username, newChat).catch(err => console.error("Background save failed", err));
     }
@@ -560,7 +531,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
         }
     };
     loadChats();
-  }, [currentUser.username]);
+  }, [currentUser.username, handleNewChat]);
 
   // Initialize Chat Instances (GenAI)
   useEffect(() => {
@@ -579,6 +550,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
             
             const chatHistory = session.messages
                 .map(mapMessageToHistory)
+                // FIX: Corrected the type predicate to use `Role` type, resolving the TypeScript error.
                 .filter((content): content is { role: Role; parts: any[] } => content !== null);
 
             const historyWithoutWelcome = chatHistory.length > 0 && chatHistory[0].role === 'model' 
@@ -661,7 +633,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
   }, []);
 
 
-  const handleExtractText = useCallback(async (file: { data: string; mimeType: string }): Promise<string | null> => {
+  const handleExtractText = useCallback(async (file: { data: string; mimeType: string }) => {
     try {
         const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
         const response = await ai.models.generateContent({
@@ -673,7 +645,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
                 ]
             }
         });
-        return response.text || null;
+        return response.text;
     } catch (error) {
         console.error("OCR failed:", error);
         return null;
@@ -734,7 +706,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
         role: 'user',
         text,
         timestamp: new Date().toISOString(),
-        files: files.map((file: any) => ({
+        files: files.map(file => ({
             name: file.name,
             dataUrl: `data:${file.mimeType};base64,${file.data}`,
             mimeType: file.mimeType
@@ -764,7 +736,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
             try {
                 const titleGenPrompt = `Dựa vào yêu cầu đầu tiên này: "${promptText}", hãy tạo một tiêu đề ngắn gọn (tối đa 5 từ) bằng tiếng Việt cho cuộc trò chuyện. Chỉ trả về tiêu đề.`;
                 const titleResponse = await ai.models.generateContent({ model: MODEL_NAME, contents: titleGenPrompt });
-                let newTitle = (titleResponse.text || '').trim().replace(/^"|"$/g, '');
+                let newTitle = titleResponse.text.trim().replace(/^"|"$/g, '');
                 if (newTitle) {
                     setChatSessions(prev =>
                         prev.map(chat => chat.id === activeChatId ? { ...chat, title: newTitle } : chat)
@@ -782,32 +754,63 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
     }
 
     try {
-        // --- IMAGE GENERATION MODE (Pollinations.ai - Free) ---
+        // --- IMAGE GENERATION MODE ---
         if (mode === 'generate_image') {
-             // Tạo số ngẫu nhiên để tránh cache
-             const randomSeed = Math.floor(Math.random() * 10000000);
-             const encodedPrompt = encodeURIComponent(text);
-             // Sử dụng Pollinations.ai API với seed random để mỗi lần là ảnh mới
-             const imageUrl = `https://image.pollinations.ai/prompt/${encodedPrompt}?seed=${randomSeed}&width=1024&height=1024&nologo=true`;
-
-             // Fake một chút delay để cảm giác như đang xử lý
-             await new Promise(resolve => setTimeout(resolve, 1000));
-
-             setChatSessions(prev =>
-                prev.map(chat => {
-                    if (chat.id !== activeChatId) return chat;
-                    const newMessages = [...chat.messages];
-                    const lastMsg = { ...newMessages[newMessages.length - 1] };
-                    lastMsg.text = `Đã tạo ảnh dựa trên mô tả: "${text}"\n(Nguồn: Pollinations.ai)`;
-                    lastMsg.files = [{
-                         name: `generated-${randomSeed}.jpg`,
-                         dataUrl: imageUrl,
-                         mimeType: 'image/jpeg'
-                    }];
-                    newMessages[newMessages.length - 1] = lastMsg;
-                    return { ...chat, messages: newMessages };
-                })
-            );
+             const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
+             let generatedImage;
+             
+             try {
+                 // Try Imagen 4 first (High Quality)
+                 const response = await ai.models.generateImages({
+                    model: IMAGE_MODEL_NAME,
+                    prompt: text,
+                    config: {
+                      numberOfImages: 1,
+                      aspectRatio: '1:1',
+                    },
+                 });
+                 generatedImage = response.generatedImages?.[0]?.image;
+             } catch (err: any) {
+                 console.warn(`Imagen 4 failed: ${err.message}. Falling back to Imagen 3...`);
+                 // Fallback to Imagen 3 (More stable)
+                 try {
+                    const response = await ai.models.generateImages({
+                        model: IMAGE_MODEL_FALLBACK,
+                        prompt: text,
+                        config: {
+                            numberOfImages: 1,
+                            aspectRatio: '1:1',
+                        },
+                    });
+                    generatedImage = response.generatedImages?.[0]?.image;
+                 } catch (fallbackErr: any) {
+                     console.error("Imagen 3 fallback failed:", fallbackErr);
+                     throw fallbackErr; // Re-throw to be caught by main catch block
+                 }
+             }
+             
+             if (generatedImage) {
+                 const base64ImageBytes = generatedImage.imageBytes;
+                 const imageUrl = `data:image/png;base64,${base64ImageBytes}`;
+                 
+                 setChatSessions(prev => 
+                    prev.map(chat => {
+                        if (chat.id !== activeChatId) return chat;
+                        const newMessages = [...chat.messages];
+                        const lastMsg = { ...newMessages[newMessages.length - 1] };
+                        lastMsg.text = `Đã tạo ảnh dựa trên mô tả: "${text}"`;
+                        lastMsg.files = [{
+                             name: 'generated-image.png',
+                             dataUrl: imageUrl,
+                             mimeType: 'image/png'
+                        }];
+                        newMessages[newMessages.length - 1] = lastMsg;
+                        return { ...chat, messages: newMessages };
+                    })
+                );
+             } else {
+                 throw new Error("Không nhận được hình ảnh từ AI.");
+             }
         } 
         // --- STANDARD CHAT MODE ---
         else {
@@ -825,7 +828,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
                          if (csvContent) {
                              messageTextToSend += `\n\n[Dữ liệu từ file ${file.name}]:\n${csvContent}\n`;
                              // Don't send binary for spreadsheet since we sent text
-                             finalFiles = finalFiles.filter((f: any) => f !== file);
+                             finalFiles = finalFiles.filter(f => f !== file);
                              hasProcessedSpreadsheet = true;
                          }
                      }
@@ -874,7 +877,7 @@ Nếu được yêu cầu vẽ biểu đồ, hãy trả về JSON \`chart_json\`
 
             const parts: any[] = [{ text: messageTextToSend }];
             if (finalFiles.length > 0) {
-                finalFiles.forEach((file: any) => {
+                finalFiles.forEach(file => {
                     parts.push({
                         inlineData: {
                             mimeType: file.mimeType,
@@ -948,6 +951,12 @@ Nếu được yêu cầu vẽ biểu đồ, hãy trả về JSON \`chart_json\`
         
         if (mode === 'generate_image') {
             errorMessage = "Không thể tạo ảnh. Có thể do mô tả chứa nội dung không phù hợp hoặc dịch vụ đang bận.";
+            // Provide specific hint for Vercel deployment issues
+            if (!process.env.API_KEY) {
+                errorMessage += " (Lỗi: Thiếu API Key trong Environment Variables)";
+            } else if (error.message?.includes('403')) {
+                errorMessage += " (Lỗi: API Key không có quyền truy cập Imagen. Vui lòng kiểm tra cài đặt dự án Google Cloud)";
+            }
         } else {
             errorMessage += "(Kiểm tra API Key của bạn hoặc định dạng file)";
         }
@@ -967,7 +976,7 @@ Nếu được yêu cầu vẽ biểu đồ, hãy trả về JSON \`chart_json\`
     } finally {
         setIsLoading(false);
     }
-  }, [activeChatId, chatSessions, mode, isLoading, currentUser, demoMessageCount]);
+  }, [activeChatId, chatSessions, mode, isLoading, currentUser, demoMessageCount, handleNewChat]);
 
 
   const handleDeleteChat = async (chatId: string, e: React.MouseEvent) => {
@@ -1022,6 +1031,7 @@ Nếu được yêu cầu vẽ biểu đồ, hãy trả về JSON \`chart_json\`
                chatSessions.forEach(session => {
                    const chatHistory = session.messages
                        .map(mapMessageToHistory)
+                       // FIX: Corrected the type predicate to use `Role` type, resolving the TypeScript error.
                        .filter((content): content is { role: Role; parts: any[] } => content !== null);
                     
                     const historyWithoutWelcome = chatHistory.length > 0 && chatHistory[0].role === 'model'
@@ -1170,21 +1180,8 @@ Nếu được yêu cầu vẽ biểu đồ, hãy trả về JSON \`chart_json\`
               </button>
           </div>
           
-          {/* PWA Install Button - Always visible unless installed */}
-          {!isStandalone && (
-            <div className="px-3 mt-3">
-                <button 
-                    onClick={handleInstallClick}
-                    className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-500 to-purple-600 text-white rounded-lg shadow-lg active:scale-95 transition-all animate-pulse"
-                >
-                    <DownloadAppIcon className="w-5 h-5" />
-                    <span className="font-bold text-sm">Tải App Về</span>
-                </button>
-            </div>
-          )}
-
           {currentUser.isDemo && (
-            <div className="px-4 py-2 bg-yellow-500/10 border-b border-yellow-500/20 mt-2">
+            <div className="px-4 py-2 bg-yellow-500/10 border-b border-yellow-500/20">
                 <div className="flex justify-between text-xs font-medium text-yellow-600 dark:text-yellow-500 mb-1">
                     <span>Dùng thử miễn phí</span>
                     <span>{DEMO_MESSAGE_LIMIT - demoMessageCount}/{DEMO_MESSAGE_LIMIT}</span>
@@ -1374,7 +1371,7 @@ Nếu được yêu cầu vẽ biểu đồ, hãy trả về JSON \`chart_json\`
                       {/* Desktop Menu (Dropdown) */}
                       {isFeaturesPopoverOpen && (
                           <div className="hidden sm:flex absolute z-50 bg-card border border-border shadow-xl p-2 animate-slide-in-up bottom-auto top-full left-auto right-0 mt-2 w-64 rounded-xl flex-col gap-1 max-h-[60vh] overflow-y-auto origin-top-right scrollbar-thin scrollbar-thumb-border">
-                              {menuItems.map((m: any) => (
+                              {menuItems.map((m) => (
                                   <button
                                       key={m.id}
                                       onClick={() => { 
@@ -1407,7 +1404,7 @@ Nếu được yêu cầu vẽ biểu đồ, hãy trả về JSON \`chart_json\`
                 <div className="mobile-menu-content relative bg-card border-t border-border rounded-t-3xl p-5 shadow-2xl animate-slide-in-up max-h-[85vh] overflow-y-auto flex flex-col">
                    {/* Handle bar with Close Button */}
                    <div className="flex items-center justify-between mb-4 flex-shrink-0">
-                       <h3 className="text-lg font-bold">Menu Chức năng & Công cụ</h3>
+                       <h3 className="text-lg font-bold">Menu Chức năng</h3>
                        <button 
                            onClick={() => setIsFeaturesPopoverOpen(false)}
                            className="px-4 py-2 bg-red-500 text-white rounded-full hover:bg-red-600 transition-colors font-bold text-sm flex items-center gap-1"
@@ -1417,31 +1414,16 @@ Nếu được yêu cầu vẽ biểu đồ, hãy trả về JSON \`chart_json\`
                    </div>
                    
                    <div className="overflow-y-auto pb-8 space-y-6">
-                      {/* Persistent Install Button in Mobile Menu */}
-                      {!isStandalone && (
-                        <div className="bg-gradient-to-r from-blue-500 to-purple-600 rounded-xl p-4 text-white shadow-lg">
-                            <div className="flex items-center justify-between mb-2">
-                                <h4 className="font-bold flex items-center gap-2"><DownloadAppIcon className="w-5 h-5" /> Cài đặt Ứng dụng</h4>
-                            </div>
-                            <p className="text-xs opacity-90 mb-3">Trải nghiệm KL AI tốt hơn, mượt mà hơn ngay trên điện thoại của bạn.</p>
-                            <button 
-                                onClick={handleInstallClick}
-                                className="w-full py-2 bg-white text-blue-600 font-bold rounded-lg text-sm hover:bg-gray-100 transition-colors active:scale-95"
-                            >
-                                {installPrompt ? "Cài đặt ngay" : "Hướng dẫn cài đặt"}
-                            </button>
-                        </div>
-                      )}
-
                       <div>
-                          <h4 className="text-xs font-bold text-text-secondary uppercase mb-3 px-1 border-b border-border pb-1">Chế độ chính</h4>
+                          <h4 className="text-xs font-bold text-text-secondary uppercase mb-3 px-1">Chế độ chính</h4>
                           <div className="grid grid-cols-2 gap-3">
-                            {modeItems.map((m: any) => (
+                            {modeItems.map(m => (
                                 <button
                                     key={m.id}
                                     onClick={(e) => {
                                         e.preventDefault();
                                         e.stopPropagation();
+                                        // DO NOT CLOSE MENU - User closes manually with Red X
                                         handleNewChat(m.id as Mode);
                                     }}
                                     className={`flex flex-col items-center justify-center gap-2 p-4 rounded-xl border transition-all active:scale-95
@@ -1460,9 +1442,9 @@ Nếu được yêu cầu vẽ biểu đồ, hãy trả về JSON \`chart_json\`
                       </div>
 
                       <div>
-                          <h4 className="text-xs font-bold text-text-secondary uppercase mb-3 px-1 border-b border-border pb-1">Công cụ học tập</h4>
+                          <h4 className="text-xs font-bold text-text-secondary uppercase mb-3 px-1">Công cụ học tập</h4>
                           <div className="grid grid-cols-2 gap-3">
-                             {toolItems.map((m: any) => (
+                             {toolItems.map(m => (
                                 <button
                                     key={m.id}
                                     onClick={(e) => {
@@ -1531,7 +1513,10 @@ Nếu được yêu cầu vẽ biểu đồ, hãy trả về JSON \`chart_json\`
                             }
                             handleSendMessage(prompt);
                         }}
-                        onApplySchedule={(scheduleText) => {}}
+                        onApplySchedule={(scheduleText) => {
+                            // This callback is for old markdown text parsing if needed, 
+                            // but we now support structured JSON which is handled inside ChatMessage via buttons
+                        }}
                         onOpenFlashcards={(cards) => setFlashcardData(cards)}
                         onOpenMindMap={(data) => setMindMapModalState({ data, messageIndex: idx })}
                         onAskSelection={(text) => handleSendMessage(`Giải thích giúp tôi đoạn này: "${text}"`)}
@@ -1591,100 +1576,112 @@ Nếu được yêu cầu vẽ biểu đồ, hãy trả về JSON \`chart_json\`
         </div>
       </main>
       
-      {/* Lofi Player Widget */}
+      {/* Lofi Player Widget - Wrapped in local Suspense to avoid crashing/flashing the whole app if lazy loaded */}
       <React.Suspense fallback={null}>
         <LofiPlayer />
       </React.Suspense>
         
-      {isSettingsOpen && (
-          <React.Suspense fallback={null}>
-              <SettingsModal 
-                  user={currentUser} 
-                  onClose={() => setIsSettingsOpen(false)} 
-                  onUpdateUser={handleUpdateUserInternal}
-              />
-          </React.Suspense>
-      )}
+        {isSettingsOpen && (
+            <React.Suspense fallback={null}>
+                <SettingsModal 
+                    user={currentUser} 
+                    onClose={() => setIsSettingsOpen(false)} 
+                    onUpdateUser={handleUpdateUserInternal}
+                />
+            </React.Suspense>
+        )}
         
-      {flashcardData && (
-          <React.Suspense fallback={null}>
-              <FlashcardView cards={flashcardData} onClose={() => setFlashcardData(null)} />
-          </React.Suspense>
-      )}
-      {mindMapModalState && (
-          <React.Suspense fallback={null}>
-              <MindMapModal data={mindMapModalState.data} onClose={() => setMindMapModalState(null)} onCreateNewMindMap={handleCreateNewMindMap} onSave={handleSaveMindMap} />
-          </React.Suspense>
-      )}
-      {isCalculatorOpen && <React.Suspense fallback={null}><ToolModal title="Máy tính khoa học" onClose={() => setIsCalculatorOpen(false)}><Calculator /></ToolModal></React.Suspense>}
-      {isPeriodicTableOpen && <React.Suspense fallback={null}><ToolModal title="Bảng tuần hoàn" onClose={() => setIsPeriodicTableOpen(false)} initialSize={{width: 800, height: 500}}><PeriodicTable /></ToolModal></React.Suspense>}
-      {isWhiteboardOpen && <React.Suspense fallback={null}><ToolModal title="Bảng trắng tương tác" onClose={() => setIsWhiteboardOpen(false)} initialSize={{width: 800, height: 600}}><Whiteboard onCapture={handleWhiteboardCapture} /></ToolModal></React.Suspense>}
-      {isPomodoroOpen && <React.Suspense fallback={null}><PomodoroTimer onClose={() => setIsPomodoroOpen(false)} /></React.Suspense>}
-      {isUnitConverterOpen && <React.Suspense fallback={null}><ToolModal title="Chuyển đổi đơn vị" onClose={() => setIsUnitConverterOpen(false)} initialSize={{width: 400, height: 500}}><UnitConverter /></ToolModal></React.Suspense>}
-      {isProbabilitySimOpen && <React.Suspense fallback={null}><ToolModal title="Mô phỏng xác suất" onClose={() => setIsProbabilitySimOpen(false)} initialSize={{width: 400, height: 500}}><ProbabilitySim /></ToolModal></React.Suspense>}
-      {isFormulaNotebookOpen && <React.Suspense fallback={null}><ToolModal title="Sổ tay công thức" onClose={() => setIsFormulaNotebookOpen(false)} initialSize={{width: 500, height: 600}}><FormulaNotebook /></ToolModal></React.Suspense>}
-      {isBreathingOpen && <React.Suspense fallback={null}><BreathingExercise onClose={() => setIsBreathingOpen(false)} /></React.Suspense>}
-      {isTarotOpen && <React.Suspense fallback={null}><TarotReader onClose={() => setIsTarotOpen(false)} onReadingRequest={handleTarotReading} /></React.Suspense>}
+        {flashcardData && (
+            <React.Suspense fallback={null}>
+                <FlashcardView 
+                    cards={flashcardData} 
+                    onClose={() => setFlashcardData(null)} 
+                />
+            </React.Suspense>
+        )}
+        
+        {mindMapModalState && (
+            <React.Suspense fallback={null}>
+                <MindMapModal
+                    data={mindMapModalState.data}
+                    onClose={() => setMindMapModalState(null)}
+                    onCreateNewMindMap={handleCreateNewMindMap}
+                    onSave={handleSaveMindMap}
+                />
+            </React.Suspense>
+        )}
 
-      {/* INSTALL INSTRUCTION MODAL (New) */}
-      {showInstallInstructions && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-message-pop-in">
-              <div className="bg-card rounded-2xl shadow-2xl max-w-sm w-full p-6 border border-border text-center relative">
-                   <button 
-                       onClick={() => setShowInstallInstructions(false)}
-                       className="absolute top-3 right-3 p-1 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700"
-                   >
-                       <XIcon className="w-5 h-5 text-text-secondary" />
-                   </button>
+        {isCalculatorOpen && (
+             <React.Suspense fallback={null}>
+                <ToolModal title="Máy tính khoa học" onClose={() => setIsCalculatorOpen(false)}>
+                    <Calculator />
+                </ToolModal>
+             </React.Suspense>
+        )}
 
-                   <div className="mb-4 flex justify-center">
-                       <div className="w-16 h-16 bg-brand rounded-2xl flex items-center justify-center shadow-lg">
-                            <DownloadAppIcon className="w-8 h-8 text-white" />
-                       </div>
-                   </div>
-                   
-                   <h3 className="text-xl font-bold mb-2">Cài đặt KL AI</h3>
-                   <p className="text-sm text-text-secondary mb-6">
-                       {isIOS 
-                         ? "Trên iPhone/iPad, trình duyệt không hỗ trợ cài đặt tự động. Hãy làm theo hướng dẫn sau:" 
-                         : "Trình duyệt của bạn không hỗ trợ cài đặt tự động. Hãy thử:"}
-                   </p>
-                   
-                   <div className="space-y-4 text-left bg-sidebar p-4 rounded-xl border border-border">
-                       <div className="flex items-start gap-3">
-                           <div className="w-6 h-6 flex items-center justify-center bg-card rounded-full text-xs font-bold border border-border shadow-sm">1</div>
-                           <div>
-                               <p className="text-sm font-medium">Nhấn nút Chia sẻ</p>
-                               <p className="text-xs text-text-secondary">(Biểu tượng <ShareIOSIcon className="w-3 h-3 inline mx-0.5" /> ở thanh công cụ)</p>
-                           </div>
-                       </div>
-                       <div className="flex items-start gap-3">
-                           <div className="w-6 h-6 flex items-center justify-center bg-card rounded-full text-xs font-bold border border-border shadow-sm">2</div>
-                           <div>
-                               <p className="text-sm font-medium">Chọn "Thêm vào MH chính"</p>
-                               <p className="text-xs text-text-secondary">(Add to Home Screen)</p>
-                           </div>
-                       </div>
-                        <div className="flex items-start gap-3">
-                           <div className="w-6 h-6 flex items-center justify-center bg-card rounded-full text-xs font-bold border border-border shadow-sm">3</div>
-                           <div>
-                               <p className="text-sm font-medium">Nhấn "Thêm" (Add)</p>
-                           </div>
-                       </div>
-                   </div>
-                   
-                   <button 
-                      onClick={() => setShowInstallInstructions(false)}
-                      className="w-full mt-6 py-3 bg-brand text-white font-bold rounded-xl shadow-lg active:scale-95 transition-transform"
-                   >
-                       Đã hiểu
-                   </button>
-              </div>
-          </div>
-      )}
+        {isPeriodicTableOpen && (
+             <React.Suspense fallback={null}>
+                <ToolModal title="Bảng tuần hoàn" onClose={() => setIsPeriodicTableOpen(false)} initialSize={{width: 800, height: 500}}>
+                    <PeriodicTable />
+                </ToolModal>
+             </React.Suspense>
+        )}
+        
+        {isWhiteboardOpen && (
+             <React.Suspense fallback={null}>
+                <ToolModal title="Bảng trắng tương tác" onClose={() => setIsWhiteboardOpen(false)} initialSize={{width: 800, height: 600}}>
+                    <Whiteboard onCapture={handleWhiteboardCapture} />
+                </ToolModal>
+             </React.Suspense>
+        )}
 
-      {/* Demo Limit Modal */}
-      {showDemoLimitModal && (
+        {isPomodoroOpen && (
+             <React.Suspense fallback={null}>
+                <PomodoroTimer onClose={() => setIsPomodoroOpen(false)} />
+             </React.Suspense>
+        )}
+
+        {isUnitConverterOpen && (
+             <React.Suspense fallback={null}>
+                <ToolModal title="Chuyển đổi đơn vị" onClose={() => setIsUnitConverterOpen(false)} initialSize={{width: 400, height: 500}}>
+                    <UnitConverter />
+                </ToolModal>
+             </React.Suspense>
+        )}
+
+        {isProbabilitySimOpen && (
+             <React.Suspense fallback={null}>
+                <ToolModal title="Mô phỏng xác suất" onClose={() => setIsProbabilitySimOpen(false)} initialSize={{width: 400, height: 500}}>
+                    <ProbabilitySim />
+                </ToolModal>
+             </React.Suspense>
+        )}
+
+        {isFormulaNotebookOpen && (
+             <React.Suspense fallback={null}>
+                <ToolModal title="Sổ tay công thức" onClose={() => setIsFormulaNotebookOpen(false)} initialSize={{width: 500, height: 600}}>
+                    <FormulaNotebook />
+                </ToolModal>
+             </React.Suspense>
+        )}
+        
+        {isBreathingOpen && (
+             <React.Suspense fallback={null}>
+                <BreathingExercise onClose={() => setIsBreathingOpen(false)} />
+             </React.Suspense>
+        )}
+
+        {isTarotOpen && (
+             <React.Suspense fallback={null}>
+                <TarotReader 
+                    onClose={() => setIsTarotOpen(false)} 
+                    onReadingRequest={handleTarotReading} 
+                />
+             </React.Suspense>
+        )}
+
+        {/* Demo Limit Modal */}
+        {showDemoLimitModal && (
             <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
                 <div className="bg-card rounded-2xl shadow-2xl max-w-md w-full p-6 border border-border animate-message-pop-in">
                     <div className="flex justify-center mb-4">
@@ -1699,19 +1696,27 @@ Nếu được yêu cầu vẽ biểu đồ, hãy trả về JSON \`chart_json\`
                     </p>
                     <div className="flex flex-col gap-3">
                          <button 
-                            onClick={() => { setShowDemoLimitModal(false); onLogout(); }}
+                            onClick={() => {
+                                setShowDemoLimitModal(false);
+                                onLogout(); 
+                            }}
                             className="w-full py-3 bg-brand hover:bg-brand/90 text-white font-bold rounded-xl shadow-lg transition-transform active:scale-95"
                          >
                              Đăng ký ngay
                          </button>
-                         <button onClick={() => setShowDemoLimitModal(false)} className="w-full py-3 bg-sidebar hover:bg-card-hover text-text-primary font-semibold rounded-xl transition-colors">Để sau</button>
+                         <button 
+                            onClick={() => setShowDemoLimitModal(false)}
+                            className="w-full py-3 bg-sidebar hover:bg-card-hover text-text-primary font-semibold rounded-xl transition-colors"
+                         >
+                             Để sau
+                         </button>
                     </div>
                 </div>
             </div>
         )}
 
-      {/* Login Prompt Modal */}
-      {showLoginPromptModal && (
+        {/* Login Prompt Modal (Settings Access) */}
+        {showLoginPromptModal && (
             <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
                 <div className="bg-card rounded-2xl shadow-2xl max-w-md w-full p-6 border border-border animate-message-pop-in">
                     <div className="flex justify-center mb-4">
@@ -1725,12 +1730,20 @@ Nếu được yêu cầu vẽ biểu đồ, hãy trả về JSON \`chart_json\`
                     </p>
                     <div className="flex flex-col gap-3">
                          <button 
-                            onClick={() => { setShowLoginPromptModal(false); onLogout(); }}
+                            onClick={() => {
+                                setShowLoginPromptModal(false);
+                                onLogout(); 
+                            }}
                             className="w-full py-3 bg-brand hover:bg-brand/90 text-white font-bold rounded-xl shadow-lg transition-transform active:scale-95"
                          >
                              Đăng nhập / Đăng ký
                          </button>
-                         <button onClick={() => setShowLoginPromptModal(false)} className="w-full py-3 bg-sidebar hover:bg-card-hover text-text-primary font-semibold rounded-xl transition-colors">Đóng</button>
+                         <button 
+                            onClick={() => setShowLoginPromptModal(false)}
+                            className="w-full py-3 bg-sidebar hover:bg-card-hover text-text-primary font-semibold rounded-xl transition-colors"
+                         >
+                             Đóng
+                         </button>
                     </div>
                 </div>
             </div>
