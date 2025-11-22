@@ -117,16 +117,14 @@ const FlashcardView: React.FC<FlashcardViewProps> = ({ flashcards, onClose }) =>
       touchStartRef.current = null;
 
       // Swipe Detection (Threshold 50px, dominant horizontal)
-      // Ưu tiên vuốt ngang, bỏ qua nếu vuốt dọc nhiều hơn (để cuộn trang)
       if (Math.abs(diffX) > 50 && Math.abs(diffX) > Math.abs(diffY) * 1.5) {
           if (diffX > 0) handleNext(); // Swipe Left -> Next
           else handlePrev(); // Swipe Right -> Prev
           
-          // Ngăn click event kích hoạt sau đó (ghost click)
           ignoreClickRef.current = true;
           setTimeout(() => ignoreClickRef.current = false, 300);
       } 
-      // Tap Detection (Movement < 10px) - Xử lý lật thẻ chắc chắn hơn onClick
+      // Tap Detection (Movement < 10px)
       else if (Math.abs(diffX) < 10 && Math.abs(diffY) < 10) {
           setIsFlipped(prev => !prev);
           ignoreClickRef.current = true;
@@ -136,7 +134,6 @@ const FlashcardView: React.FC<FlashcardViewProps> = ({ flashcards, onClose }) =>
 
   const handleClick = (e: React.MouseEvent) => {
       if (isAdding) return;
-      // Trên mobile, nếu touch handler đã xử lý thì bỏ qua click
       if (ignoreClickRef.current) return;
       
       e.preventDefault();
@@ -247,9 +244,30 @@ const FlashcardView: React.FC<FlashcardViewProps> = ({ flashcards, onClose }) =>
         </div>
 
         {/* Controls */}
-        <div className="flex items-center justify-center gap-4">
-          <button onClick={handlePrev} disabled={currentIndex === 0 || isAdding} className="px-6 py-3 rounded-xl font-bold bg-white/10 hover:bg-white/20 disabled:opacity-30 disabled:cursor-not-allowed transition-all active:scale-95 text-white border border-white/10">← Quay lại</button>
-          <button onClick={handleNext} disabled={currentIndex === cards.length - 1 || isAdding} className="px-8 py-3 rounded-xl font-bold bg-white text-black hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-lg active:scale-95 flex items-center gap-2">Tiếp theo →</button>
+        <div className="flex items-center justify-center gap-3 w-full max-w-lg mx-auto px-2">
+          <button 
+            onClick={handlePrev} 
+            disabled={currentIndex === 0 || isAdding} 
+            className="flex-1 py-3 rounded-xl font-bold bg-white/10 hover:bg-white/20 disabled:opacity-30 disabled:cursor-not-allowed transition-all active:scale-95 text-white border border-white/10 flex items-center justify-center"
+          >
+            ← <span className="hidden sm:inline ml-2">Quay lại</span>
+          </button>
+          
+          <button 
+            onClick={() => setIsFlipped(p => !p)} 
+            disabled={isAdding} 
+            className="flex-1 py-3 rounded-xl font-bold bg-brand/80 hover:bg-brand text-white transition-all shadow-lg active:scale-95 flex items-center justify-center gap-2 border border-white/10"
+          >
+             <span className="text-xl font-serif">↺</span> <span className="text-sm">Lật</span>
+          </button>
+
+          <button 
+            onClick={handleNext} 
+            disabled={currentIndex === cards.length - 1 || isAdding} 
+            className="flex-1 py-3 rounded-xl font-bold bg-white text-black hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-lg active:scale-95 flex items-center justify-center"
+          >
+            <span className="hidden sm:inline mr-2">Tiếp theo</span> →
+          </button>
         </div>
       </div>
     </div>
