@@ -129,11 +129,15 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ user, onClose, onUpdateUs
 
     setIsPasswordLoading(true);
     try {
-        await onUpdateUser({ password: newPassword });
-        setSuccessMessage('Đổi mật khẩu thành công!');
-        setCurrentPassword('');
-        setNewPassword('');
-        setConfirmPassword('');
+        const success = await onUpdateUser({ password: newPassword });
+        if (success) {
+            setSuccessMessage('Đổi mật khẩu thành công!');
+            setCurrentPassword('');
+            setNewPassword('');
+            setConfirmPassword('');
+        } else {
+             setError('Không thể đổi mật khẩu (Lỗi hệ thống).');
+        }
     } catch (err: any) {
         setError(err.message || 'Không thể đổi mật khẩu.');
     } finally {
@@ -304,21 +308,41 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ user, onClose, onUpdateUs
               <SettingItem title="Đổi mật khẩu">
                 {error && <p className="bg-red-500/10 text-red-500 text-sm text-center p-3 rounded-lg mb-4">{error}</p>}
                 {successMessage && <p className="bg-green-500/10 text-green-600 text-sm text-center p-3 rounded-lg mb-4">{successMessage}</p>}
-                <form onSubmit={handlePasswordChange} className="space-y-4">
+                
+                <form onSubmit={handlePasswordChange} className="space-y-3">
                   <div>
-                      <label htmlFor="currentPassword"className="block text-sm font-medium text-text-secondary mb-1"> Mật khẩu hiện tại </label>
-                      <input id="currentPassword" type="password" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} className="w-full bg-input-bg border border-border rounded-lg p-3 text-text-primary placeholder-text-secondary focus:ring-2 focus:ring-brand focus:outline-none" placeholder="••••••••" autoComplete="current-password" />
+                      <input 
+                          type="password" 
+                          placeholder="Mật khẩu hiện tại" 
+                          value={currentPassword}
+                          onChange={e => setCurrentPassword(e.target.value)}
+                          className="w-full bg-input-bg border border-border rounded-lg p-3 text-text-primary placeholder-text-secondary focus:ring-2 focus:ring-brand outline-none"
+                      />
                   </div>
                   <div>
-                      <label htmlFor="newPassword"className="block text-sm font-medium text-text-secondary mb-1"> Mật khẩu mới </label>
-                      <input id="newPassword" type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} className="w-full bg-input-bg border border-border rounded-lg p-3 text-text-primary placeholder-text-secondary focus:ring-2 focus:ring-brand focus:outline-none" placeholder="••••••••" autoComplete="new-password" />
+                      <input 
+                          type="password" 
+                          placeholder="Mật khẩu mới" 
+                          value={newPassword}
+                          onChange={e => setNewPassword(e.target.value)}
+                          className="w-full bg-input-bg border border-border rounded-lg p-3 text-text-primary placeholder-text-secondary focus:ring-2 focus:ring-brand outline-none"
+                      />
                   </div>
-                   <div>
-                      <label htmlFor="confirmNewPassword"className="block text-sm font-medium text-text-secondary mb-1"> Xác nhận mật khẩu mới </label>
-                      <input id="confirmNewPassword" type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} className="w-full bg-input-bg border border-border rounded-lg p-3 text-text-primary placeholder-text-secondary focus:ring-2 focus:ring-brand focus:outline-none" placeholder="••••••••" autoComplete="new-password" />
+                  <div>
+                      <input 
+                          type="password" 
+                          placeholder="Xác nhận mật khẩu mới" 
+                          value={confirmPassword}
+                          onChange={e => setConfirmPassword(e.target.value)}
+                          className="w-full bg-input-bg border border-border rounded-lg p-3 text-text-primary placeholder-text-secondary focus:ring-2 focus:ring-brand outline-none"
+                      />
                   </div>
-                  <button type="submit" disabled={isPasswordLoading} className="w-full bg-brand text-white font-bold py-3 px-4 rounded-lg hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-card focus:ring-brand transition-opacity duration-200 disabled:opacity-50">
-                      {isPasswordLoading ? 'Đang lưu...' : 'Lưu thay đổi'}
+                  <button 
+                      type="submit" 
+                      disabled={isPasswordLoading}
+                      className="w-full py-3 bg-brand text-white font-bold rounded-lg shadow-md hover:bg-brand/90 disabled:opacity-70 transition-all flex items-center justify-center gap-2"
+                  >
+                      {isPasswordLoading ? 'Đang xử lý...' : 'Cập nhật mật khẩu'}
                   </button>
                 </form>
               </SettingItem>
@@ -328,46 +352,38 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ user, onClose, onUpdateUs
   };
 
   return (
-    <div 
-      className="fixed inset-0 z-50 flex items-end md:items-center justify-center sm:p-4"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="settings-title"
-    >
-      <div 
-        className="absolute inset-0 bg-black/60 backdrop-blur-sm transition-opacity" 
-        onClick={onClose} 
-      />
-      
-      <div 
-        className="relative bg-card w-full h-full md:h-auto md:max-h-[85vh] md:max-w-4xl md:rounded-2xl shadow-xl flex flex-col md:flex-row overflow-hidden animate-slide-in-up"
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Mobile Header with Tabs */}
-        <header className="md:w-64 flex-shrink-0 bg-sidebar/50 md:bg-card/50 border-b md:border-b-0 md:border-r border-border flex flex-col">
-            <div className="flex items-center justify-between p-4">
-                 <h2 id="settings-title" className="text-lg md:text-xl font-bold">Cài đặt</h2>
-                 <button onClick={onClose} className="p-2 rounded-full hover:bg-card-hover active:bg-card-hover/80 transition-colors md:hidden" aria-label="Đóng">
-                    <XIcon className="w-6 h-6 text-text-primary" />
-                </button>
-            </div>
-            
-            <nav className="flex md:flex-col overflow-x-auto no-scrollbar px-2 md:px-0 md:pb-0">
-                <TabButton tabId="general" label="Chung" icon={<SettingsIcon className="w-5 h-5" />} />
-                <TabButton tabId="personalization" label="Cá nhân hóa" icon={<UserIcon className="w-5 h-5" />} />
-                <TabButton tabId="account" label="Tài khoản" icon={<KeyIcon className="w-5 h-5" />} />
-            </nav>
-        </header>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 animate-slide-in-up">
+      <div className="w-full max-w-4xl h-[85vh] bg-card rounded-2xl shadow-2xl border border-border flex flex-col md:flex-row overflow-hidden">
+        {/* Sidebar Tabs */}
+        <div className="w-full md:w-64 bg-sidebar flex-shrink-0 flex flex-row md:flex-col border-b md:border-b-0 md:border-r border-border overflow-x-auto md:overflow-visible">
+          <div className="p-4 md:p-6 border-b border-border/50 hidden md:block">
+            <h2 className="text-xl font-bold flex items-center gap-2">
+              <SettingsIcon className="w-6 h-6 text-brand" />
+              Cài đặt
+            </h2>
+          </div>
+          <div className="flex md:flex-col p-2 md:p-4 gap-1">
+            <TabButton tabId="general" label="Chung" icon={<SettingsIcon className="w-5 h-5" />} />
+            <TabButton tabId="personalization" label="Cá nhân hóa" icon={<UserIcon className="w-5 h-5" />} />
+            <TabButton tabId="account" label="Tài khoản" icon={<KeyIcon className="w-5 h-5" />} />
+          </div>
+        </div>
 
-        <main className="flex-1 overflow-y-auto relative bg-background md:bg-transparent">
-            <div className="p-4 md:p-8 pb-20 md:pb-8 max-w-2xl mx-auto md:max-w-none">
-              {renderContent()}
-            </div>
-            {/* Desktop Close Button */}
-            <button onClick={onClose} className="hidden md:block absolute top-4 right-4 p-1.5 rounded-full hover:bg-card-hover bg-card/50 backdrop-blur-sm transition-colors" aria-label="Đóng">
-                <XIcon className="w-5 h-5" />
-            </button>
-        </main>
+        {/* Content */}
+        <div className="flex-1 flex flex-col h-full overflow-hidden">
+          <div className="flex items-center justify-between p-4 border-b border-border md:hidden">
+             <h2 className="text-lg font-bold">Cài đặt</h2>
+             <button onClick={onClose} className="p-2 rounded-full hover:bg-input-bg"><XIcon className="w-6 h-6" /></button>
+          </div>
+          <div className="flex-1 overflow-y-auto p-4 md:p-8 scrollbar-thin scrollbar-thumb-border">
+             {renderContent()}
+          </div>
+          <div className="p-4 border-t border-border flex justify-end gap-3 bg-card/50 backdrop-blur-sm">
+              <button onClick={onClose} className="px-5 py-2.5 rounded-lg text-text-secondary hover:bg-input-bg font-medium transition-colors">
+                  Đóng
+              </button>
+          </div>
+        </div>
       </div>
     </div>
   );

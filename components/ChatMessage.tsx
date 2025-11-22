@@ -1,8 +1,8 @@
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { type Message, type MindMapNode, type FollowUpAction } from '../types';
-import { UserIcon, AngryBotIcon, SpeakerIcon, ShareIcon, CheckIcon, BellPlusIcon, FlashcardIcon, FileIcon, DownloadIcon, MindMapIcon, ThumbUpIcon, ThumbDownIcon, HelpCircleIcon, RegenerateIcon, ChevronUpIcon, ExplainIcon, ExampleIcon, SummarizeIcon, ChevronDownIcon, CalendarPlusIcon } from './Icons';
+import { type Message, type MindMapNode, type FollowUpAction, type Flashcard } from '../types';
+import { UserIcon, AngryBotIcon, SpeakerIcon, ShareIcon, CheckIcon, BellPlusIcon, FileIcon, DownloadIcon, MindMapIcon, FlashcardIcon, ThumbUpIcon, ThumbDownIcon, HelpCircleIcon, RegenerateIcon, ChevronUpIcon, ExplainIcon, ExampleIcon, SummarizeIcon, ChevronDownIcon, CalendarPlusIcon } from './Icons';
 import DataChart from './DataChart';
 
 
@@ -23,8 +23,8 @@ interface ChatMessageProps {
   isLoading?: boolean;
   onFollowUpClick?: (originalText: string, action: FollowUpAction) => void;
   onApplySchedule?: (markdownText: string) => void;
-  onOpenFlashcards?: (cards: { term: string; definition: string }[]) => void;
   onOpenMindMap?: (data: MindMapNode) => void;
+  onOpenFlashcards?: (data: Flashcard[]) => void;
   onAskSelection?: (selectedText: string) => void;
   onRegenerate?: () => void;
   userAvatar?: string;
@@ -90,7 +90,7 @@ const markdownToHTML = (markdown: string): string => {
   return html;
 }
 
-const ChatMessage: React.FC<ChatMessageProps> = ({ message, isLastMessage = false, isLoading = false, onFollowUpClick, onApplySchedule, onOpenFlashcards, onOpenMindMap, onAskSelection, onRegenerate, userAvatar }) => {
+const ChatMessage: React.FC<ChatMessageProps> = ({ message, isLastMessage = false, isLoading = false, onFollowUpClick, onApplySchedule, onOpenMindMap, onOpenFlashcards, onAskSelection, onRegenerate, userAvatar }) => {
   const [displayedText, setDisplayedText] = useState('');
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isCopied, setIsCopied] = useState(false);
@@ -253,14 +253,12 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, isLastMessage = fals
 
 
   // Effect 2: DOM Manipulations (Graphs, MathJax, Tables)
-  // Runs when htmlContent changes OR when loading status changes (to fix reverting issue)
   useEffect(() => {
     if (contentRef.current && htmlContent) {
         
         // 1. Render graphs
         const graphElements = contentRef.current.querySelectorAll('.graph-container');
         graphElements.forEach(el => {
-            // Always try to re-render the graph because dangerouslySetInnerHTML might have wiped the canvas
             el.innerHTML = ''; 
             const functionDataString = el.getAttribute('data-functions');
             if (functionDataString) {
@@ -268,14 +266,9 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, isLastMessage = fals
                     const functionData = JSON.parse(functionDataString);
                     if (Array.isArray(functionData) && functionData.length > 0 && window.functionPlot) {
                         const containerWidth = el.clientWidth || 350;
-                        
-                        // Inject scope for 'e' to fix "symbol e is undefined"
                         const dataWithScope = functionData.map((d: any) => ({
                             ...d,
-                            scope: {
-                                ...d.scope,
-                                e: Math.E
-                            }
+                            scope: { ...d.scope, e: Math.E }
                         }));
 
                         window.functionPlot({
@@ -287,7 +280,6 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, isLastMessage = fals
                         });
                     }
                 } catch (e) {
-                    console.error("Function plot error:", e);
                     const error = e as Error;
                     el.innerHTML = `<p class="text-red-500 p-2">Lỗi vẽ đồ thị: ${error.message}</p>`;
                 }
@@ -300,18 +292,14 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, isLastMessage = fals
             elements.forEach(codeElement => {
                 const preElement = codeElement.parentElement;
                 if (!preElement || preElement.tagName !== 'PRE') return;
-                
                 const markdownTable = codeElement.textContent || '';
                 const lines = markdownTable.trim().split('\n');
-                if (lines.length < 3) return; // Not a valid table
+                if (lines.length < 3) return; 
 
                 const headerLine = lines[0];
                 const bodyLines = lines.slice(2);
-
-                // Function to parse cell content (bold, italic, etc.) but preserve LaTeX
                 const parseCell = (text: string) => {
                     let t = text.trim();
-                    // Simple formatting replacement
                     t = t.replace(/\*\*(.*?)\*\*/g, '<b>$1</b>');
                     t = t.replace(/\*(.*?)\*/g, '<i>$1</i>');
                     return t;
@@ -324,113 +312,81 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, isLastMessage = fals
                 }).join('');
 
                 const tableHtml = `<table><thead><tr>${headers}</tr></thead><tbody>${rows}</tbody></table>`;
-                
                 const container = document.createElement('div');
                 container.className = `${containerClass} not-prose`;
                 container.innerHTML = tableHtml;
-
                 preElement.parentNode?.replaceChild(container, preElement);
             });
         };
         
-        // Render Bảng Biến Thiên from code blocks
         processCustomTable('bbt', 'variation-table-container');
-        // Render Bảng Xét Dấu from code blocks
         processCustomTable('bsd', 'sign-table-container');
 
-        // 3. Auto-detect standard tables that look like "Bảng Biến Thiên"
-        // Sometimes the model outputs a standard markdown table instead of a code block.
+        // 3. Auto-detect standard tables
         const standardTables = contentRef.current.querySelectorAll('.table-wrapper table');
         standardTables.forEach(table => {
              const firstHeader = table.querySelector('thead th:first-child');
              const secondRowHeader = table.querySelector('tbody tr:first-child td:first-child');
-
-             // Heuristic: First col is 'x', second row starts with y' or f'(x) or y
              if (firstHeader && (firstHeader.textContent?.trim() === 'x') && 
                  secondRowHeader && (['y\'', "f'(x)", 'y'].includes(secondRowHeader.textContent?.trim() || ''))) {
-                  
-                  table.classList.add('variation-table');
+                 table.classList.add('variation-table');
                   const wrapper = table.closest('.table-wrapper');
                   if (wrapper) {
                       wrapper.classList.add('variation-table-container');
-                      wrapper.classList.remove('table-wrapper'); // Remove standard styling wrapper
+                      wrapper.classList.remove('table-wrapper'); 
                   }
              }
         });
 
-        // 4. Typeset MathJax - Scoped to current message only for performance
+        // 4. Typeset MathJax
         if (window.MathJax && contentRef.current) {
-            // Optimization: Only typeset the specific container, not the whole document.
-            // passing [contentRef.current] forces MathJax to only look at this message.
             window.MathJax.typesetPromise([contentRef.current]).catch(err => console.error('MathJax typesetting failed:', err));
         }
 
         // 5. Code Block Enhancements
         const preElements = contentRef.current.querySelectorAll('pre');
-        const MAX_CODE_HEIGHT = 300; // in pixels
+        const MAX_CODE_HEIGHT = 300;
 
         preElements.forEach(pre => {
-            // Avoid processing blocks that have already been enhanced
             if (pre.parentElement?.classList.contains('code-block-wrapper')) return;
-
-            // Syntax Highlighting
             const codeElement = pre.querySelector('code');
             if (codeElement && window.hljs) {
                 try {
                     window.hljs.highlightElement(codeElement);
-                } catch (e) {
-                    console.error('Highlight.js error:', e);
-                }
+                } catch (e) {}
             }
             
-            // Create a wrapper for the <pre> tag
             const wrapper = document.createElement('div');
             wrapper.className = 'code-block-wrapper not-prose';
             pre.parentNode?.replaceChild(wrapper, pre);
             wrapper.appendChild(pre);
             
-            // Add Copy Button
             if (!pre.querySelector('.copy-code-button')) {
                 const button = document.createElement('button');
                 button.className = 'copy-code-button';
                 button.setAttribute('aria-label', 'Sao chép mã');
                 button.title = 'Sao chép mã';
-
-                const copyIconHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"></rect><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"></path></svg>`;
-                const checkIconHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>`;
+                button.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"></rect><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"></path></svg>`;
                 
-                button.innerHTML = copyIconHTML;
-
                 button.addEventListener('click', () => {
                     if (codeElement) {
                         navigator.clipboard.writeText(codeElement.innerText).then(() => {
-                            button.innerHTML = checkIconHTML;
                             button.classList.add('copied');
-                            setTimeout(() => {
-                                button.innerHTML = copyIconHTML;
-                                button.classList.remove('copied');
-                            }, 2000);
-                        }).catch(err => {
-                            console.error('Không thể sao chép mã:', err);
+                            setTimeout(() => button.classList.remove('copied'), 2000);
                         });
                     }
                 });
                 pre.appendChild(button);
             }
 
-            // Add Collapsing logic
-            // We need a slight delay to ensure layout is done so scrollHeight is correct
             setTimeout(() => {
                 const needsCollapsing = pre.scrollHeight > MAX_CODE_HEIGHT;
                 if (needsCollapsing && !wrapper.querySelector('.show-more-button')) {
                     pre.classList.add('is-collapsible');
                     pre.style.maxHeight = `${MAX_CODE_HEIGHT}px`;
-
                     const showMoreButton = document.createElement('button');
                     showMoreButton.className = 'show-more-button';
-                    
-                    const chevronIconHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>`;
-                    showMoreButton.innerHTML = `${chevronIconHTML}<span>Show more</span>`;
+                    showMoreButton.innerHTML = `<span>Show more</span>`;
                     
                     showMoreButton.addEventListener('click', () => {
                         const isExpanded = pre.classList.toggle('is-expanded');
@@ -451,16 +407,10 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, isLastMessage = fals
         });
     }
   }, [htmlContent, isLoading]); 
-  // Added isLoading to dependencies: This ensures that when the message finishes loading 
-  // (isLoading goes from true to false), the effect runs again. 
-  // This fixes the issue where the text reverts to raw LaTeX because React re-rendered 
-  // the component with the raw string but the MathJax typeset didn't trigger.
 
   useEffect(() => {
     const handleMouseUp = (e: MouseEvent) => {
         if (isUser || !contentRef.current || !onAskSelection) return;
-
-        // Check if the click happened inside the text selection popover.
         if ((e.target as HTMLElement).closest('.selection-popover')) return;
         
         setTimeout(() => {
@@ -469,9 +419,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, isLastMessage = fals
                 if (contentRef.current?.contains(selection.anchorNode)) {
                     const range = selection.getRangeAt(0);
                     const rect = range.getBoundingClientRect();
-                    
                     selectedTextRef.current = selection.toString();
-                    
                     setSelectionPopover({
                         visible: true,
                         x: rect.left + rect.width / 2,
@@ -485,12 +433,8 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, isLastMessage = fals
             }
         }, 10);
     };
-
     document.addEventListener('mouseup', handleMouseUp);
-    
-    return () => {
-        document.removeEventListener('mouseup', handleMouseUp);
-    };
+    return () => document.removeEventListener('mouseup', handleMouseUp);
   }, [isUser, onAskSelection]);
 
   const handleToggleSpeech = () => {
@@ -513,21 +457,14 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, isLastMessage = fals
     const textToShare = message.text;
     if (navigator.share) {
       try {
-        await navigator.share({
-          title: 'KL AI Chat Message',
-          text: textToShare,
-        });
-      } catch (error) {
-        console.error('Lỗi khi chia sẻ:', error);
-      }
+        await navigator.share({ title: 'KL AI Chat Message', text: textToShare });
+      } catch (error) {}
     } else {
       try {
         await navigator.clipboard.writeText(textToShare);
         setIsCopied(true);
         setTimeout(() => setIsCopied(false), 2000);
-      } catch (error) {
-        console.error('Không thể sao chép văn bản:', error);
-      }
+      } catch (error) {}
     }
   };
 
@@ -546,30 +483,20 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, isLastMessage = fals
   const handleAddToCalendar = () => {
       if (!message.scheduleData) return;
       const { title, startTime, endTime, details, location } = message.scheduleData;
-      
-      // Helper function to format date to YYYYMMDDTHHMMSSZ (UTC)
       const toISOStringCompact = (dateStr: string) => {
           try {
               const d = new Date(dateStr);
               return d.toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
-          } catch (e) {
-              // Fallback: assume user might edit manually if parsing failed
-              return '';
-          }
+          } catch (e) { return ''; }
       };
-
       const start = toISOStringCompact(startTime);
       const end = toISOStringCompact(endTime);
-      
       const googleCalendarUrl = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(title)}&dates=${start}/${end}&details=${encodeURIComponent(details)}${location ? `&location=${encodeURIComponent(location)}` : ''}`;
-      
       window.open(googleCalendarUrl, '_blank');
   };
 
   const handleFeedback = (type: 'like' | 'dislike') => {
     setFeedback(prev => (prev === type ? null : type));
-    // In a real application, you would send this feedback to a server.
-    // e.g., sendFeedbackToServer(messageId, type);
   };
 
   const isTyping = isLastMessage && isLoading && message.role === 'model' && message.text.length > 0;
@@ -584,12 +511,12 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, isLastMessage = fals
   const iconClasses = isUser ? 'text-brand' : 'text-amber-400';
   const showFollowUpActions = !isUser && (!isLastMessage || !isLoading) && message.text && onFollowUpClick && !message.mindMapData && !message.isError;
   const showApplyScheduleButton = !isUser && (!isLastMessage || !isLoading) && message.mode === 'create_schedule' && onApplySchedule;
-  const showOpenFlashcardsButton = !isUser && message.flashcards && message.flashcards.length > 0 && onOpenFlashcards && message.mode === 'flashcard';
   const showDownloadButton = !isUser && message.fileToDownload && (!isLastMessage || !isLoading);
   const showOpenMindMapButton = !isUser && message.mindMapData && onOpenMindMap && (!isLastMessage || !isLoading);
+  const showOpenFlashcardsButton = !isUser && message.flashcards && onOpenFlashcards && (!isLastMessage || !isLoading);
   const showAddToCalendar = !isUser && message.scheduleData && (!isLastMessage || !isLoading);
 
-  if (!textToDisplay && message.role === 'model' && !isTyping && (!message.files || message.files.length === 0) && !message.mindMapData && !message.chartConfig) {
+  if (!textToDisplay && message.role === 'model' && !isTyping && (!message.files || message.files.length === 0) && !message.mindMapData && !message.chartConfig && !message.flashcards) {
     return null;
   }
   
@@ -653,10 +580,8 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, isLastMessage = fals
                 ))}
               </div>
             )}
-            {/* Render the memoized HTML content */}
             <div dangerouslySetInnerHTML={{ __html: htmlContent }} />
             
-            {/* Render Chart if available */}
             {!isUser && message.chartConfig && (
                 <div className="mt-4 not-prose">
                     <DataChart config={message.chartConfig} />
@@ -741,12 +666,12 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, isLastMessage = fals
             </button>
           )}
 
-          {showOpenFlashcardsButton && onOpenFlashcards && (
+          {showOpenFlashcardsButton && (
             <button
               onClick={() => onOpenFlashcards(message.flashcards!)}
-              className="bg-brand/10 hover:bg-brand/20 text-brand text-xs px-3 py-1.5 rounded-full transition-colors flex items-center gap-1.5 font-semibold"
+              className="bg-yellow-500/10 hover:bg-yellow-500/20 text-yellow-600 dark:text-yellow-500 text-xs px-3 py-1.5 rounded-full transition-colors flex items-center gap-1.5 font-semibold"
             >
-              <FlashcardIcon className="w-4 h-4" /> Mở lại bộ thẻ
+              <FlashcardIcon className="w-4 h-4" /> Mở bộ Flashcard ({message.flashcards!.length} thẻ)
             </button>
           )}
 

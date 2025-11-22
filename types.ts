@@ -1,7 +1,7 @@
 
 export type Role = 'user' | 'model';
 
-export type Mode = 'chat' | 'create_exam' | 'solve_exam' | 'create_schedule' | 'learn' | 'exam' | 'theory' | 'flashcard' | 'scramble_exam' | 'similar_exam' | 'create_file' | 'mind_map' | 'generate_image' | 'grader' | 'chat_document' | 'data_analysis' | 'rpg' | 'roast' | 'akinator' | 'tarot' | 'mbti';
+export type Mode = 'chat' | 'create_exam' | 'solve_exam' | 'create_schedule' | 'learn' | 'exam' | 'theory' | 'scramble_exam' | 'similar_exam' | 'create_file' | 'mind_map' | 'generate_image' | 'grader' | 'chat_document' | 'data_analysis' | 'rpg' | 'roast' | 'akinator' | 'tarot' | 'mbti' | 'flashcard' | 'numerology' | 'dream_interpreter' | 'caption_gen' | 'face_reading' | 'debate' | 'mystery' | 'rapper' | 'emoji_quiz' | 'dating_sim' | 'food_randomizer' | 'fashion_police' | 'werewolf_moderator' | 'style_transfer' | 'rap_battle' | 'roadmap' | 'socratic' | 'mock_oral';
 
 export type FollowUpAction = 'explain' | 'example' | 'summarize';
 
@@ -13,6 +13,11 @@ export interface MindMapNode {
   link?: string;
 }
 
+export interface Flashcard {
+  term: string;
+  translation: string;
+  definition?: string;
+}
 
 export interface Message {
   role: Role;
@@ -23,13 +28,13 @@ export interface Message {
     dataUrl: string;
     mimeType: string;
   }[];
-  flashcards?: { term: string; definition: string }[];
   fileToDownload?: {
     name: string;
     content: string;
     mimeType: string;
   }[];
   mindMapData?: MindMapNode;
+  flashcards?: Flashcard[];
   chartConfig?: any; // JSON config for Chart.js
   scheduleData?: {
     title: string;
