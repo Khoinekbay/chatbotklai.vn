@@ -10,7 +10,7 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="KL AI" />
-    <link rel="apple-touch-icon" href="https://files.catbox.moe/dcev69.png">
+    <link rel="apple-touch-icon" href="https://files.catbox.moe/13xbx6.png">
 
     <link rel="dns-prefetch" href="https://cdn.tailwindcss.com">
     <link rel="dns-prefetch" href="https://aistudiocdn.com">
@@ -109,6 +109,15 @@
         --background-rgb: 15, 23, 42;
         --border-rgb: 51, 65, 85;
       }
+      
+      /* Mobile Optimizations */
+      * {
+        -webkit-tap-highlight-color: transparent;
+      }
+      .touch-manipulation {
+        touch-action: manipulation;
+      }
+
       @keyframes messagePopIn {
         0% {
           opacity: 0;
@@ -162,6 +171,21 @@
         0% { transform: scale(0.8); opacity: 0.5; }
         50% { transform: scale(1); opacity: 1; }
         100% { transform: scale(0.8); opacity: 0.5; }
+      }
+      /* Music Note Animation */
+      @keyframes float-music-note {
+        0% {
+          transform: translateY(0) translateX(0) rotate(0deg) scale(0.5);
+          opacity: 0;
+        }
+        10% {
+          opacity: 1;
+          transform: translateY(-10px) translateX(5px) rotate(10deg) scale(1);
+        }
+        100% {
+          transform: translateY(-100px) translateX(var(--tx)) rotate(var(--tr)) scale(0.8);
+          opacity: 0;
+        }
       }
 
       /* Breathing Animation */

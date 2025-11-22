@@ -127,55 +127,58 @@ const LofiPlayer: React.FC = () => {
   }, [isDragging]);
 
   
-  if (!isOpen) {
-      return (
-          <button 
-            onClick={() => setIsOpen(true)}
-            className="fixed bottom-20 left-4 z-30 p-3 bg-card border border-border rounded-full shadow-lg hover:bg-card-hover transition-all active:scale-95 group"
-            title="Bật nhạc Lofi"
-          >
-              <MusicIcon className="w-6 h-6 text-brand group-hover:animate-spin" />
-          </button>
-      );
-  }
-
   return (
-    <div 
-        className={`fixed z-40 bg-black rounded-xl shadow-2xl overflow-hidden border border-gray-700 transition-all duration-200 ${isMinimized ? 'w-64 h-auto' : 'w-80 h-auto'}`}
-        style={{ 
-            left: position.x, 
-            top: position.y,
-            transition: isDragging ? 'none' : 'width 0.3s, height 0.3s',
-            touchAction: 'none' // Important for touch dragging
-        }}
-    >
-        {/* Header (Draggable) */}
-        <div 
-            className="bg-gray-900 p-2 flex items-center justify-between border-b border-gray-800 cursor-move select-none"
-            style={{ touchAction: 'none' }}
-            onMouseDown={handleMouseDown}
-            onTouchStart={handleTouchStart}
-            onTouchMove={handleTouchMove}
-            onTouchEnd={stopDrag}
+    <>
+        {/* Trigger Button (Visible when closed) */}
+        <button 
+            onClick={() => setIsOpen(true)}
+            className={`fixed bottom-20 left-4 z-30 p-3 bg-card border border-border rounded-full shadow-lg hover:bg-card-hover transition-all duration-300 active:scale-95 group ${isOpen ? 'opacity-0 pointer-events-none translate-y-4' : 'opacity-100 translate-y-0'}`}
+            title="Bật nhạc Lofi"
         >
-            <div className="flex items-center gap-2 text-white pointer-events-none">
-                <MusicIcon className="w-4 h-4 text-brand" />
-                <span className="text-xs font-bold">Lofi Player</span>
-            </div>
-            <div className="flex items-center gap-1">
-                <button onClick={() => setIsMinimized(!isMinimized)} className="p-1 hover:bg-gray-800 rounded text-gray-400">
-                    {isMinimized ? <MaximizeIcon className="w-3 h-3" /> : <MinimizeIcon className="w-3 h-3" />}
-                </button>
-                <button onClick={() => setIsOpen(false)} className="p-1 hover:bg-red-900/50 rounded text-gray-400 hover:text-red-400">
-                    <XIcon className="w-3 h-3" />
-                </button>
-            </div>
-        </div>
+            <MusicIcon className="w-6 h-6 text-brand group-hover:animate-spin" />
+        </button>
 
-        {/* Video Area */}
-        {!isMinimized && (
-            // Add pointer-events-none when dragging to prevent iframe from capturing mouse events causing lag
-            <div className={`relative w-full aspect-video bg-black ${isDragging ? 'pointer-events-none' : 'pointer-events-auto'}`}>
+        {/* Player Window (Always mounted to keep audio playing, just hidden via CSS) */}
+        <div 
+            className={`fixed z-40 bg-black rounded-xl shadow-2xl overflow-hidden border border-gray-700 transition-all duration-300
+                ${isMinimized ? 'w-64' : 'w-80'}
+                ${isOpen ? 'opacity-100 visible scale-100' : 'opacity-0 invisible scale-90 pointer-events-none'}
+            `}
+            style={{ 
+                left: position.x, 
+                top: position.y,
+                // Disable layout transition during drag to prevent lag
+                transitionProperty: isDragging ? 'opacity, visibility, transform' : 'all',
+                touchAction: 'none' 
+            }}
+        >
+            {/* Header (Draggable) */}
+            <div 
+                className="bg-gray-900 p-2 flex items-center justify-between border-b border-gray-800 cursor-move select-none"
+                style={{ touchAction: 'none' }}
+                onMouseDown={handleMouseDown}
+                onTouchStart={handleTouchStart}
+                onTouchMove={handleTouchMove}
+                onTouchEnd={stopDrag}
+            >
+                <div className="flex items-center gap-2 text-white pointer-events-none">
+                    <MusicIcon className="w-4 h-4 text-brand" />
+                    <span className="text-xs font-bold">Lofi Player</span>
+                </div>
+                <div className="flex items-center gap-1">
+                    <button onClick={() => setIsMinimized(!isMinimized)} className="p-1 hover:bg-gray-800 rounded text-gray-400">
+                        {isMinimized ? <MaximizeIcon className="w-3 h-3" /> : <MinimizeIcon className="w-3 h-3" />}
+                    </button>
+                    <button onClick={() => setIsOpen(false)} className="p-1 hover:bg-red-900/50 rounded text-gray-400 hover:text-red-400" title="Ẩn (Chạy ngầm)">
+                        <XIcon className="w-3 h-3" />
+                    </button>
+                </div>
+            </div>
+
+            {/* Video Area - Using CSS to hide instead of unmounting to keep audio */}
+            <div 
+                className={`relative w-full bg-black transition-all duration-300 ${isMinimized ? 'h-0' : 'aspect-video'} ${isDragging ? 'pointer-events-none' : 'pointer-events-auto'}`}
+            >
                  <iframe 
                     width="100%" 
                     height="100%" 
@@ -184,14 +187,12 @@ const LofiPlayer: React.FC = () => {
                     frameBorder="0" 
                     allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" 
                     allowFullScreen
-                    className="opacity-80 hover:opacity-100 transition-opacity"
+                    className={`absolute inset-0 w-full h-full opacity-80 hover:opacity-100 transition-opacity`}
                  ></iframe>
             </div>
-        )}
 
-        {/* Controls */}
-        {!isMinimized && (
-            <div className="p-2 bg-gray-900 space-y-2">
+            {/* Controls - Hide when minimized */}
+            <div className={`bg-gray-900 space-y-2 transition-all duration-300 overflow-hidden ${isMinimized ? 'h-0 p-0' : 'p-2'}`}>
                 <select 
                     value={currentChannel.name === 'Custom Link' ? 'custom' : currentChannel.id}
                     onChange={(e) => {
@@ -230,8 +231,8 @@ const LofiPlayer: React.FC = () => {
                     </div>
                 )}
             </div>
-        )}
-    </div>
+        </div>
+    </>
   );
 };
 
