@@ -80,6 +80,7 @@ export interface SharedResource {
   type: 'flashcard' | 'mindmap' | 'exercise' | 'image' | 'document';
   title: string;
   description: string;
+  subject?: string; // New subject field
   data: any; // Stores Flashcard[], MindMapNode, or Message content
   likes: number;
   downloads: number;

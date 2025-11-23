@@ -1,4 +1,5 @@
 
+
 import { User, ChatSession, LearningStats, SharedResource } from '../types';
 import { supabase } from './supabaseClient';
 
@@ -404,23 +405,38 @@ export const api = {
       // 2. Get Cloud Resources
       if (supabase) {
           try {
-              let query = supabase.from('shared_resources').select('*').order('created_at', { ascending: false }).limit(50);
+              let query = supabase.from('shared_resources').select('*').order('created_at', { ascending: false }).limit(100);
               if (typeFilter) query = query.eq('type', typeFilter);
 
-              const { data, error } = await timeoutPromise(query, 3000) as any; // Short timeout
-              if (!error && data) resources = [...data, ...resources]; // Cloud items first usually, but we sort later
+              const { data, error } = await timeoutPromise(query, 4000) as any;
+              if (!error && data) {
+                  // Parse subject from data column if not present in top level (backward compatibility)
+                  const mappedData = data.map((item: any) => ({
+                      ...item,
+                      subject: item.subject || (item.data && item.data.subject) || 'Tự do'
+                  }));
+                  resources = [...mappedData, ...resources];
+              }
           } catch (e) { console.warn("Cloud resource fetch skipped/failed", e); }
       }
 
       // Deduplicate by ID
       const uniqueResources = Array.from(new Map(resources.map(item => [item.id, item])).values());
 
-      if (typeFilter) return uniqueResources.filter(r => r.type === typeFilter).sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-      return uniqueResources.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+      // Parse local subjects too
+      const finalResources = uniqueResources.map(r => ({
+          ...r,
+          subject: r.subject || (r.data && r.data.subject) || 'Tự do'
+      }));
+
+      if (typeFilter) return finalResources.filter(r => r.type === typeFilter).sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+      return finalResources.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
   },
 
   publishResource: async (resource: Omit<SharedResource, 'id' | 'user_id' | 'created_at' | 'likes' | 'downloads'>): Promise<boolean> => {
-      // Strategy: Try Cloud -> If fail, Save Local
+      // Prepare payload: Inject subject into data if it's not already part of the structure
+      // We do this because we can't easily change the Supabase schema from here, so we store 'subject' in the JSON 'data' column.
+      const payloadData = { ...resource.data, subject: resource.subject || 'Tự do' };
       
       if (supabase) {
           try {
@@ -433,7 +449,7 @@ export const api = {
                         type: resource.type,
                         title: resource.title,
                         description: resource.description,
-                        data: resource.data
+                        data: payloadData // Store subject here
                     });
                 if (!error) return true;
             }
@@ -455,7 +471,9 @@ export const api = {
               created_at: new Date().toISOString(),
               likes: 0,
               downloads: 0,
-              ...resource
+              ...resource,
+              subject: resource.subject,
+              data: payloadData
           };
 
           const localStr = localStorage.getItem(LOCAL_RESOURCES_KEY);
@@ -471,5 +489,30 @@ export const api = {
           }
           return false;
       }
+  },
+
+  toggleLikeResource: async (resourceId: string, currentLikes: number, increment: boolean): Promise<number> => {
+      const newCount = Math.max(0, currentLikes + (increment ? 1 : -1));
+      
+      if (supabase && !resourceId.startsWith('local-')) {
+          try {
+              // Optimistic update for UI, fire and forget DB update
+              await supabase.from('shared_resources').update({ likes: newCount }).eq('id', resourceId);
+          } catch (e) { console.error("Failed to update cloud likes", e); }
+      } else {
+          // Update local
+          try {
+              const localStr = localStorage.getItem(LOCAL_RESOURCES_KEY);
+              if (localStr) {
+                  const localData: SharedResource[] = JSON.parse(localStr);
+                  const index = localData.findIndex(r => r.id === resourceId);
+                  if (index !== -1) {
+                      localData[index].likes = newCount;
+                      localStorage.setItem(LOCAL_RESOURCES_KEY, JSON.stringify(localData));
+                  }
+              }
+          } catch (e) {}
+      }
+      return newCount;
   }
 };

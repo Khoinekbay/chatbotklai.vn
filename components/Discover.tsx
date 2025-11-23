@@ -1,8 +1,9 @@
 
+
 import React, { useState, useEffect, useRef } from 'react';
 import { api } from '../utils/api';
 import { SharedResource, User } from '../types';
-import { XIcon, SearchIcon, HeartIcon, DownloadIcon, FlashcardIcon, MindMapIcon, ImageIcon, FileIcon, PenIcon, PlusIcon, AttachmentIcon, TrashIcon, CheckIcon } from './Icons';
+import { XIcon, SearchIcon, HeartIcon, DownloadIcon, FlashcardIcon, MindMapIcon, ImageIcon, FileIcon, PenIcon, PlusIcon, AttachmentIcon, TrashIcon, CheckIcon, TrophyIcon, FireIcon } from './Icons';
 
 interface DiscoverProps {
   onClose: () => void;
@@ -10,16 +11,36 @@ interface DiscoverProps {
   currentUser: User;
 }
 
+const SUBJECTS = [
+    { id: 'Tất cả', color: 'bg-gray-500' },
+    { id: 'Toán', color: 'bg-blue-500' },
+    { id: 'Văn', color: 'bg-pink-500' },
+    { id: 'Anh', color: 'bg-purple-500' },
+    { id: 'Lý', color: 'bg-indigo-500' },
+    { id: 'Hóa', color: 'bg-green-500' },
+    { id: 'Sinh', color: 'bg-emerald-500' },
+    { id: 'Sử', color: 'bg-yellow-600' },
+    { id: 'Địa', color: 'bg-orange-500' },
+    { id: 'Tin', color: 'bg-cyan-600' },
+    { id: 'GDCD', color: 'bg-red-400' },
+    { id: 'Công nghệ', color: 'bg-teal-500' },
+    { id: 'Nghệ thuật', color: 'bg-rose-400' },
+    { id: 'Tự do', color: 'bg-gray-600' }
+];
+
 const Discover: React.FC<DiscoverProps> = ({ onClose, onOpenResource, currentUser }) => {
   const [resources, setResources] = useState<SharedResource[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [filter, setFilter] = useState<'all' | 'flashcard' | 'mindmap' | 'exercise' | 'image' | 'document'>('all');
+  const [activeSubject, setActiveSubject] = useState('Tất cả');
+  const [sortBy, setSortBy] = useState<'newest' | 'trending'>('trending');
   const [search, setSearch] = useState('');
+  const [likedPosts, setLikedPosts] = useState<Set<string>>(new Set());
   
   // Create Post State
   const [isCreating, setIsCreating] = useState(false);
   const [postTitle, setPostTitle] = useState('');
   const [postContent, setPostContent] = useState('');
+  const [postSubject, setPostSubject] = useState('Tự do');
   const [postFiles, setPostFiles] = useState<{ name: string; data: string; mimeType: string }[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
@@ -31,38 +52,47 @@ const Discover: React.FC<DiscoverProps> = ({ onClose, onOpenResource, currentUse
   useEffect(() => {
       const load = async () => {
           setIsLoading(true);
-          const data = await api.getSharedResources(filter === 'all' ? undefined : filter as any);
+          const data = await api.getSharedResources();
           setResources(data);
+          
+          // Restore likes from local session
+          const storedLikes = localStorage.getItem('kl_ai_user_likes');
+          if (storedLikes) {
+              setLikedPosts(new Set(JSON.parse(storedLikes)));
+          }
+          
           setIsLoading(false);
       };
       load();
-  }, [filter, isCreating]); // Reload after creating
+  }, [isCreating]); // Reload after creating
 
-  const filteredResources = resources.filter(res => 
-      res.title.toLowerCase().includes(search.toLowerCase()) || 
-      res.username.toLowerCase().includes(search.toLowerCase())
-  );
+  const filteredResources = resources
+      .filter(res => {
+          const matchesSearch = res.title.toLowerCase().includes(search.toLowerCase()) || res.username.toLowerCase().includes(search.toLowerCase());
+          const matchesSubject = activeSubject === 'Tất cả' || res.subject === activeSubject;
+          return matchesSearch && matchesSubject;
+      })
+      .sort((a, b) => {
+          if (sortBy === 'trending') {
+              return b.likes - a.likes;
+          }
+          return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+      });
 
   const getTypeIcon = (type: string) => {
       switch(type) {
-          case 'flashcard': return <FlashcardIcon className="w-12 h-12 text-yellow-600 opacity-80" />;
-          case 'mindmap': return <MindMapIcon className="w-12 h-12 text-purple-600 opacity-80" />;
-          case 'image': return <ImageIcon className="w-12 h-12 text-blue-500 opacity-80" />;
-          case 'document': return <FileIcon className="w-12 h-12 text-red-500 opacity-80" />;
-          case 'exercise': return <PenIcon className="w-12 h-12 text-green-600 opacity-80" />;
+          case 'flashcard': return <FlashcardIcon className="w-10 h-10 text-yellow-600 opacity-90" />;
+          case 'mindmap': return <MindMapIcon className="w-10 h-10 text-purple-600 opacity-90" />;
+          case 'image': return <ImageIcon className="w-10 h-10 text-blue-500 opacity-90" />;
+          case 'document': return <FileIcon className="w-10 h-10 text-red-500 opacity-90" />;
+          case 'exercise': return <PenIcon className="w-10 h-10 text-green-600 opacity-90" />;
           default: return null;
       }
   };
 
-  const getBgColor = (type: string) => {
-      switch(type) {
-          case 'flashcard': return 'bg-yellow-500/10';
-          case 'mindmap': return 'bg-purple-500/10';
-          case 'image': return 'bg-blue-500/10';
-          case 'document': return 'bg-red-500/10';
-          case 'exercise': return 'bg-green-500/10';
-          default: return 'bg-gray-100 dark:bg-gray-800';
-      }
+  const getSubjectColor = (sub: string) => {
+      const found = SUBJECTS.find(s => s.id === sub);
+      return found ? found.color : 'bg-gray-500';
   };
 
   const handleCreateClick = () => {
@@ -71,6 +101,24 @@ const Discover: React.FC<DiscoverProps> = ({ onClose, onOpenResource, currentUse
           return;
       }
       setIsCreating(true);
+  };
+
+  const handleLikeToggle = async (e: React.MouseEvent, resource: SharedResource) => {
+      e.stopPropagation();
+      const isLiked = likedPosts.has(resource.id);
+      
+      // Optimistic UI Update
+      const newLikes = isLiked ? resource.likes - 1 : resource.likes + 1;
+      const newLikedSet = new Set(likedPosts);
+      if (isLiked) newLikedSet.delete(resource.id);
+      else newLikedSet.add(resource.id);
+      
+      setLikedPosts(newLikedSet);
+      setResources(prev => prev.map(r => r.id === resource.id ? { ...r, likes: newLikes } : r));
+      localStorage.setItem('kl_ai_user_likes', JSON.stringify(Array.from(newLikedSet)));
+
+      // API Call
+      await api.toggleLikeResource(resource.id, resource.likes, !isLiked);
   };
 
   const fileToBase64 = (file: File): Promise<{ name: string; data: string; mimeType: string }> => {
@@ -124,8 +172,10 @@ const Discover: React.FC<DiscoverProps> = ({ onClose, onOpenResource, currentUse
           type: type,
           title: postTitle,
           description: postContent,
+          subject: postSubject,
           data: { 
               text: postContent,
+              subject: postSubject, // Store inside data as well for compatibility
               files: postFiles.map(f => ({ 
                   name: f.name, 
                   dataUrl: `data:${f.mimeType};base64,${f.data}`, 
@@ -139,74 +189,96 @@ const Discover: React.FC<DiscoverProps> = ({ onClose, onOpenResource, currentUse
           setPostTitle('');
           setPostContent('');
           setPostFiles([]);
+          setPostSubject('Tự do');
       }
       setIsSubmitting(false);
   };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 animate-slide-in-up">
-        <div className="bg-card w-full max-w-5xl rounded-2xl border border-border shadow-2xl overflow-hidden flex flex-col h-[90vh] relative">
+        <div className="bg-card w-full max-w-6xl rounded-2xl border border-border shadow-2xl overflow-hidden flex flex-col h-[90vh] relative">
             {/* Header */}
-            <div className="p-6 border-b border-border bg-gradient-to-r from-purple-600/10 to-blue-600/10 flex flex-col gap-4">
-                <div className="flex items-center justify-between">
+            <div className="p-4 md:p-6 border-b border-border bg-gradient-to-r from-indigo-600/10 to-purple-600/10 flex flex-col gap-4">
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                     <h2 className="text-2xl font-bold text-text-primary flex items-center gap-2">
                         <span className="text-3xl">🌍</span> Khám Phá Hub
                     </h2>
-                    <div className="flex items-center gap-2">
-                        <button 
-                            onClick={handleCreateClick}
-                            className="hidden md:flex items-center gap-2 px-4 py-2 bg-brand text-white rounded-lg hover:bg-brand/90 transition-colors font-bold text-sm shadow-sm"
-                        >
-                            <PlusIcon className="w-4 h-4" /> Đăng bài
-                        </button>
+                    
+                    <div className="flex items-center gap-3 flex-1 md:justify-end">
+                        <div className="relative w-full md:w-64">
+                            <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-secondary" />
+                            <input 
+                                type="text" 
+                                placeholder="Tìm bài viết, tác giả..." 
+                                value={search}
+                                onChange={(e) => setSearch(e.target.value)}
+                                className="w-full pl-9 pr-4 py-2 bg-input-bg rounded-full text-sm border border-transparent focus:border-brand focus:ring-2 focus:ring-brand/20 outline-none shadow-sm"
+                            />
+                        </div>
                         <button onClick={onClose} className="p-2 hover:bg-black/10 dark:hover:bg-white/10 rounded-full transition-colors">
                             <XIcon className="w-6 h-6 text-text-secondary" />
                         </button>
                     </div>
                 </div>
                 
-                <div className="flex flex-col md:flex-row gap-3 justify-between">
-                    <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
-                        {['all', 'flashcard', 'mindmap', 'exercise', 'image', 'document'].map(f => (
+                <div className="flex flex-col md:flex-row items-start md:items-center gap-4 justify-between">
+                    {/* Subject Filter - Scrollable */}
+                    <div className="flex gap-2 overflow-x-auto w-full md:w-auto pb-2 scrollbar-hide no-scrollbar mask-fade-right">
+                        {SUBJECTS.map(sub => (
                             <button
-                                key={f}
-                                onClick={() => setFilter(f as any)}
-                                className={`px-4 py-2 rounded-full text-sm font-medium capitalize transition-colors whitespace-nowrap ${filter === f ? 'bg-brand text-white shadow-md' : 'bg-input-bg text-text-secondary hover:bg-sidebar'}`}
+                                key={sub.id}
+                                onClick={() => setActiveSubject(sub.id)}
+                                className={`px-4 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-all border ${activeSubject === sub.id ? `${sub.color} text-white border-transparent shadow-md scale-105` : 'bg-card border-border text-text-secondary hover:bg-sidebar'}`}
                             >
-                                {f === 'all' ? 'Tất cả' : f === 'exercise' ? 'Bài tập' : f === 'image' ? 'Hình ảnh' : f === 'document' ? 'Tài liệu' : f}
+                                {sub.id}
                             </button>
                         ))}
                     </div>
-                    <div className="relative w-full md:w-64">
-                        <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-secondary" />
-                        <input 
-                            type="text" 
-                            placeholder="Tìm kiếm..." 
-                            value={search}
-                            onChange={(e) => setSearch(e.target.value)}
-                            className="w-full pl-9 pr-4 py-2 bg-input-bg rounded-lg text-sm border border-transparent focus:border-brand focus:ring-2 focus:ring-brand/20 outline-none"
-                        />
+
+                    {/* Controls */}
+                    <div className="flex items-center gap-2 shrink-0">
+                        <div className="flex bg-input-bg p-1 rounded-lg">
+                            <button 
+                                onClick={() => setSortBy('trending')}
+                                className={`px-3 py-1.5 rounded-md text-xs font-bold flex items-center gap-1 transition-all ${sortBy === 'trending' ? 'bg-white dark:bg-gray-700 shadow text-orange-500' : 'text-text-secondary'}`}
+                            >
+                                <FireIcon className="w-3 h-3" /> Nổi bật
+                            </button>
+                            <button 
+                                onClick={() => setSortBy('newest')}
+                                className={`px-3 py-1.5 rounded-md text-xs font-bold flex items-center gap-1 transition-all ${sortBy === 'newest' ? 'bg-white dark:bg-gray-700 shadow text-blue-500' : 'text-text-secondary'}`}
+                            >
+                                <CheckIcon className="w-3 h-3" /> Mới nhất
+                            </button>
+                        </div>
+                        
+                        <button 
+                            onClick={handleCreateClick}
+                            className="hidden md:flex items-center gap-2 px-4 py-2 bg-brand text-white rounded-lg hover:bg-brand/90 transition-colors font-bold text-xs shadow-lg hover:shadow-brand/30 active:scale-95"
+                        >
+                            <PlusIcon className="w-4 h-4" /> Đăng bài
+                        </button>
                     </div>
                 </div>
             </div>
 
             {/* Grid */}
-            <div className="flex-1 overflow-y-auto p-6 bg-input-bg/30 scrollbar-thin scrollbar-thumb-border relative">
+            <div className="flex-1 overflow-y-auto p-4 md:p-6 bg-input-bg/30 scrollbar-thin scrollbar-thumb-border relative">
                 
-                {/* Create Post Input Area */}
+                {/* Create Post Input Area (Mobile/Quick Access) */}
                 <div 
                     onClick={handleCreateClick}
-                    className="bg-card border border-border rounded-xl p-4 mb-6 flex items-center gap-3 cursor-pointer hover:shadow-md transition-all shadow-sm"
+                    className="bg-card border border-border rounded-2xl p-4 mb-8 flex items-center gap-3 cursor-pointer hover:shadow-md transition-all shadow-sm transform hover:-translate-y-1"
                 >
                     <div className="w-10 h-10 rounded-full bg-gray-200 overflow-hidden border border-border flex-shrink-0">
                         {currentUser.avatar?.startsWith('data:') ? <img src={currentUser.avatar} className="w-full h-full object-cover"/> : <div className="w-full h-full flex items-center justify-center">{currentUser.avatar || '👤'}</div>}
                     </div>
-                    <div className="flex-1 bg-input-bg rounded-full px-4 py-2.5 text-text-secondary text-sm hover:bg-sidebar transition-colors truncate">
-                        {currentUser.isDemo ? "Đăng nhập để chia sẻ bài viết..." : "Bạn muốn chia sẻ tài liệu, bài tập gì hôm nay?"}
+                    <div className="flex-1 bg-input-bg rounded-full px-4 py-3 text-text-secondary text-sm hover:bg-sidebar transition-colors truncate">
+                        {currentUser.isDemo ? "Đăng nhập để chia sẻ bài viết..." : "Bạn muốn chia sẻ kiến thức gì hôm nay?"}
                     </div>
                     <div className="flex gap-2 text-text-secondary">
+                        <div className="p-2 hover:bg-sidebar rounded-full text-green-500" title="Tài liệu"><FileIcon className="w-5 h-5" /></div>
                         <div className="p-2 hover:bg-sidebar rounded-full text-blue-500" title="Hình ảnh"><ImageIcon className="w-5 h-5" /></div>
-                        <div className="p-2 hover:bg-sidebar rounded-full text-green-500" title="Bài tập"><FileIcon className="w-5 h-5" /></div>
                     </div>
                 </div>
 
@@ -217,44 +289,63 @@ const Discover: React.FC<DiscoverProps> = ({ onClose, onOpenResource, currentUse
                     </div>
                 ) : filteredResources.length === 0 ? (
                     <div className="text-center py-20 opacity-60">
-                        <p className="text-lg font-medium">Chưa có bài đăng nào.</p>
-                        <p className="text-sm text-text-secondary">Hãy là người đầu tiên chia sẻ!</p>
+                        <p className="text-lg font-medium">Không tìm thấy bài đăng nào.</p>
+                        <p className="text-sm text-text-secondary">Hãy là người đầu tiên chia sẻ về chủ đề này!</p>
                     </div>
                 ) : (
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 pb-20">
-                        {filteredResources.map(res => (
-                            <div key={res.id} className="bg-card border border-border rounded-xl overflow-hidden hover:shadow-lg transition-all group flex flex-col h-full cursor-pointer" onClick={() => setSelectedResource(res)}>
-                                <div className={`h-40 relative overflow-hidden flex items-center justify-center ${getBgColor(res.type)}`}>
-                                    {/* Custom Previews based on type */}
+                        {filteredResources.map((res, index) => (
+                            <div 
+                                key={res.id} 
+                                className={`bg-card border border-border rounded-2xl overflow-hidden hover:shadow-xl transition-all group flex flex-col h-full cursor-pointer relative ${sortBy === 'trending' && index < 3 ? 'ring-2 ring-yellow-400/50' : ''}`} 
+                                onClick={() => setSelectedResource(res)}
+                            >
+                                {/* Ranking Badge */}
+                                {sortBy === 'trending' && index < 3 && (
+                                    <div className="absolute top-0 left-0 z-20 bg-yellow-400 text-yellow-900 px-3 py-1 rounded-br-xl font-black text-xs shadow-md flex items-center gap-1">
+                                        <TrophyIcon className="w-3 h-3" /> TOP {index + 1}
+                                    </div>
+                                )}
+
+                                <div className="h-40 relative overflow-hidden flex items-center justify-center bg-sidebar/50 group-hover:bg-sidebar transition-colors">
+                                    {/* Type Icon / Preview */}
                                     {res.type === 'image' && res.data?.files?.[0]?.dataUrl ? (
                                         <img src={res.data.files[0].dataUrl} alt={res.title} className="w-full h-full object-cover transition-transform group-hover:scale-105" />
                                     ) : (
-                                        <>
-                                            <div className="absolute top-2 right-2 bg-black/20 backdrop-blur-sm px-2 py-1 rounded text-[10px] font-bold text-white uppercase z-10">
-                                                {res.type}
-                                            </div>
-                                            <div className="transition-transform group-hover:scale-110 duration-300">
-                                                {getTypeIcon(res.type)}
-                                            </div>
-                                        </>
+                                        <div className="transition-transform group-hover:scale-110 duration-300">
+                                            {getTypeIcon(res.type)}
+                                        </div>
                                     )}
+                                    
+                                    {/* Subject Badge */}
+                                    <div className={`absolute top-3 right-3 ${getSubjectColor(res.subject || 'Tự do')} text-white px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase shadow-sm z-10`}>
+                                        {res.subject || 'Tự do'}
+                                    </div>
                                 </div>
                                 
-                                <div className="p-4 flex-1 flex flex-col">
-                                    <h3 className="font-bold text-lg text-text-primary line-clamp-1 mb-1" title={res.title}>{res.title}</h3>
-                                    <p className="text-xs text-text-secondary line-clamp-2 mb-4 flex-1">{res.description || 'Không có mô tả.'}</p>
+                                <div className="p-5 flex-1 flex flex-col">
+                                    <h3 className="font-bold text-lg text-text-primary line-clamp-2 mb-2 leading-tight group-hover:text-brand transition-colors">{res.title}</h3>
+                                    <p className="text-xs text-text-secondary line-clamp-3 mb-4 flex-1 leading-relaxed">{res.description || 'Không có mô tả chi tiết.'}</p>
                                     
-                                    <div className="flex items-center justify-between pt-3 border-t border-border mt-auto">
+                                    <div className="flex items-center justify-between pt-4 border-t border-border mt-auto">
                                         <div className="flex items-center gap-2">
-                                            <div className="w-6 h-6 rounded-full bg-gray-200 overflow-hidden border border-border">
+                                            <div className="w-7 h-7 rounded-full bg-gray-200 overflow-hidden border border-border shadow-sm">
                                                 {res.avatar?.startsWith('data:') ? <img src={res.avatar} className="w-full h-full object-cover"/> : <div className="w-full h-full flex items-center justify-center text-[10px]">{res.avatar || '👤'}</div>}
                                             </div>
-                                            <span className="text-xs font-medium truncate max-w-[80px]">{res.username}</span>
+                                            <div className="flex flex-col">
+                                                <span className="text-xs font-bold truncate max-w-[80px]">{res.username}</span>
+                                                <span className="text-[9px] text-text-secondary">{new Date(res.created_at).toLocaleDateString()}</span>
+                                            </div>
                                         </div>
-                                        <div className="flex items-center gap-3 text-text-secondary text-xs">
-                                            <span className="flex items-center gap-1"><HeartIcon className="w-3 h-3" /> {res.likes}</span>
-                                            {res.type === 'document' && <DownloadIcon className="w-3 h-3" />}
-                                        </div>
+                                        
+                                        {/* Like Button */}
+                                        <button 
+                                            onClick={(e) => handleLikeToggle(e, res)}
+                                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full transition-all active:scale-90 ${likedPosts.has(res.id) ? 'bg-red-500/10 text-red-500' : 'bg-sidebar hover:bg-red-500/10 hover:text-red-500 text-text-secondary'}`}
+                                        >
+                                            <HeartIcon className={`w-4 h-4 ${likedPosts.has(res.id) ? 'fill-current' : ''}`} /> 
+                                            <span className="text-xs font-bold">{res.likes}</span>
+                                        </button>
                                     </div>
                                 </div>
                             </div>
@@ -263,11 +354,10 @@ const Discover: React.FC<DiscoverProps> = ({ onClose, onOpenResource, currentUse
                 )}
             </div>
 
-            {/* Floating Action Button */}
+            {/* Floating Action Button (Mobile) */}
             <button 
                 onClick={handleCreateClick}
-                className="absolute bottom-8 right-8 w-14 h-14 bg-brand hover:bg-brand/90 text-white rounded-full shadow-xl flex items-center justify-center transition-transform hover:scale-110 active:scale-95 z-20"
-                title="Đăng bài mới"
+                className="md:hidden absolute bottom-6 right-6 w-14 h-14 bg-brand hover:bg-brand/90 text-white rounded-full shadow-2xl flex items-center justify-center transition-transform hover:scale-110 active:scale-95 z-20"
             >
                 <PlusIcon className="w-8 h-8" />
             </button>
@@ -278,8 +368,11 @@ const Discover: React.FC<DiscoverProps> = ({ onClose, onOpenResource, currentUse
                     <div className="bg-card w-full max-w-3xl rounded-2xl border border-border shadow-2xl flex flex-col max-h-[85vh] overflow-hidden animate-message-pop-in">
                         {/* Modal Header */}
                         <div className="p-4 border-b border-border flex items-start justify-between bg-sidebar/30">
-                            <div className="flex flex-col gap-1">
-                                <span className="text-[10px] font-bold uppercase tracking-wider text-brand bg-brand/10 px-2 py-0.5 rounded w-fit">{selectedResource.type}</span>
+                            <div className="flex flex-col gap-2">
+                                <div className="flex gap-2">
+                                    <span className={`text-[10px] font-bold uppercase tracking-wider text-white px-2 py-0.5 rounded w-fit ${getSubjectColor(selectedResource.subject || 'Tự do')}`}>{selectedResource.subject || 'Tự do'}</span>
+                                    <span className="text-[10px] font-bold uppercase tracking-wider text-text-secondary bg-input-bg px-2 py-0.5 rounded w-fit border border-border">{selectedResource.type}</span>
+                                </div>
                                 <h2 className="text-xl font-bold text-text-primary line-clamp-2">{selectedResource.title}</h2>
                             </div>
                             <button onClick={() => setSelectedResource(null)} className="p-1.5 hover:bg-black/10 dark:hover:bg-white/10 rounded-full">
@@ -290,18 +383,27 @@ const Discover: React.FC<DiscoverProps> = ({ onClose, onOpenResource, currentUse
                         {/* Modal Content */}
                         <div className="p-6 overflow-y-auto flex-1">
                             {/* Author */}
-                            <div className="flex items-center gap-3 mb-6">
-                                <div className="w-10 h-10 rounded-full bg-gray-200 overflow-hidden border border-border">
-                                    {selectedResource.avatar?.startsWith('data:') ? <img src={selectedResource.avatar} className="w-full h-full object-cover"/> : <div className="w-full h-full flex items-center justify-center text-lg">{selectedResource.avatar || '👤'}</div>}
+                            <div className="flex items-center justify-between mb-6">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-12 h-12 rounded-full bg-gray-200 overflow-hidden border-2 border-brand/20">
+                                        {selectedResource.avatar?.startsWith('data:') ? <img src={selectedResource.avatar} className="w-full h-full object-cover"/> : <div className="w-full h-full flex items-center justify-center text-xl">{selectedResource.avatar || '👤'}</div>}
+                                    </div>
+                                    <div>
+                                        <p className="font-bold text-sm">{selectedResource.username}</p>
+                                        <p className="text-xs text-text-secondary">{new Date(selectedResource.created_at).toLocaleString()}</p>
+                                    </div>
                                 </div>
-                                <div>
-                                    <p className="font-bold text-sm">{selectedResource.username}</p>
-                                    <p className="text-xs text-text-secondary">{new Date(selectedResource.created_at).toLocaleDateString()}</p>
-                                </div>
+                                <button 
+                                    onClick={(e) => handleLikeToggle(e, selectedResource)}
+                                    className={`flex items-center gap-2 px-4 py-2 rounded-full transition-all ${likedPosts.has(selectedResource.id) ? 'bg-red-500 text-white shadow-red-500/30 shadow-lg' : 'bg-input-bg hover:bg-red-100 hover:text-red-500 text-text-secondary'}`}
+                                >
+                                    <HeartIcon className={`w-5 h-5 ${likedPosts.has(selectedResource.id) ? 'fill-current' : ''}`} /> 
+                                    <span className="font-bold">{selectedResource.likes}</span>
+                                </button>
                             </div>
 
                             {/* Body */}
-                            <div className="prose dark:prose-invert max-w-none mb-6">
+                            <div className="prose dark:prose-invert max-w-none mb-6 p-4 bg-input-bg/30 rounded-xl border border-border/50">
                                 <p className="whitespace-pre-wrap text-sm leading-relaxed">{selectedResource.description}</p>
                             </div>
 
@@ -309,19 +411,19 @@ const Discover: React.FC<DiscoverProps> = ({ onClose, onOpenResource, currentUse
                             {selectedResource.data?.files && selectedResource.data.files.length > 0 && (
                                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mt-4">
                                     {selectedResource.data.files.map((file: any, i: number) => (
-                                        <div key={i} className="border border-border rounded-lg overflow-hidden group relative">
+                                        <div key={i} className="border border-border rounded-lg overflow-hidden group relative shadow-sm">
                                             {file.mimeType.startsWith('image/') ? (
                                                 <img src={file.dataUrl} className="w-full h-32 object-cover" />
                                             ) : (
                                                 <div className="w-full h-32 bg-sidebar flex flex-col items-center justify-center p-2">
                                                     <FileIcon className="w-8 h-8 text-text-secondary mb-2" />
-                                                    <span className="text-xs text-center text-text-secondary break-all line-clamp-2">{file.name}</span>
+                                                    <span className="text-xs text-center text-text-secondary break-all line-clamp-2 px-2">{file.name}</span>
                                                 </div>
                                             )}
                                             <a 
                                                 href={file.dataUrl} 
                                                 download={file.name}
-                                                className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white font-bold gap-2"
+                                                className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white font-bold gap-2 backdrop-blur-sm"
                                             >
                                                 <DownloadIcon className="w-5 h-5" /> Tải về
                                             </a>
@@ -360,7 +462,15 @@ const Discover: React.FC<DiscoverProps> = ({ onClose, onOpenResource, currentUse
                             </div>
                             <div className="flex flex-col">
                                 <span className="font-bold text-sm">{currentUser.username}</span>
-                                <span className="text-xs text-text-secondary">Đang công khai 🌏</span>
+                                <select 
+                                    value={postSubject} 
+                                    onChange={(e) => setPostSubject(e.target.value)}
+                                    className="text-xs text-text-secondary bg-transparent outline-none cursor-pointer hover:text-brand font-medium"
+                                >
+                                    {SUBJECTS.filter(s => s.id !== 'Tất cả').map(sub => (
+                                        <option key={sub.id} value={sub.id}>Chủ đề: {sub.id}</option>
+                                    ))}
+                                </select>
                             </div>
                         </div>
 
@@ -369,14 +479,14 @@ const Discover: React.FC<DiscoverProps> = ({ onClose, onOpenResource, currentUse
                                 type="text" 
                                 value={postTitle} 
                                 onChange={(e) => setPostTitle(e.target.value)}
-                                placeholder="Tiêu đề / Chủ đề (Bắt buộc)"
+                                placeholder="Tiêu đề bài viết..."
                                 className="w-full p-3 bg-input-bg border-b-2 border-transparent focus:border-brand outline-none font-bold text-lg rounded-lg"
                                 autoFocus
                             />
                             <textarea 
                                 value={postContent}
                                 onChange={(e) => setPostContent(e.target.value)}
-                                placeholder="Bạn đang nghĩ gì? Hãy chia sẻ kiến thức, câu hỏi hoặc bài tập..."
+                                placeholder="Bạn muốn chia sẻ kiến thức gì? Viết nội dung ở đây..."
                                 className="w-full h-32 p-3 bg-transparent outline-none resize-none text-base border border-border rounded-lg focus:border-brand"
                             />
                             
@@ -400,7 +510,7 @@ const Discover: React.FC<DiscoverProps> = ({ onClose, onOpenResource, currentUse
                                            </div>
                                        ))}
                                        <button onClick={() => fileInputRef.current?.click()} className="flex items-center justify-center gap-2 bg-card p-2 rounded border border-border hover:bg-input-bg text-xs font-medium text-text-secondary border-dashed">
-                                           <PlusIcon className="w-4 h-4" /> Thêm file khác
+                                           <PlusIcon className="w-4 h-4" /> Thêm file
                                        </button>
                                     </div>
                                 ) : (
@@ -416,11 +526,12 @@ const Discover: React.FC<DiscoverProps> = ({ onClose, onOpenResource, currentUse
                             </div>
                         </div>
 
-                        <div className="flex justify-end border-t border-border pt-4">
+                        <div className="flex justify-end border-t border-border pt-4 gap-3">
+                            <button onClick={() => setIsCreating(false)} className="px-4 py-2 rounded-lg text-sm font-medium hover:bg-input-bg text-text-secondary transition-colors">Hủy</button>
                             <button 
                                 onClick={handleCreatePost}
                                 disabled={!postTitle.trim() || (!postContent.trim() && postFiles.length === 0) || isSubmitting}
-                                className="px-6 py-2 bg-brand hover:bg-brand/90 text-white font-bold rounded-lg transition-colors disabled:opacity-50 flex items-center gap-2"
+                                className="px-6 py-2 bg-brand hover:bg-brand/90 text-white font-bold rounded-lg transition-colors disabled:opacity-50 flex items-center gap-2 shadow-lg shadow-brand/20"
                             >
                                 {isSubmitting ? 'Đang đăng...' : 'Đăng bài'}
                             </button>
