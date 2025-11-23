@@ -1,4 +1,5 @@
 
+
 export type Role = 'user' | 'model';
 
 export type Mode = 'chat' | 'create_exam' | 'solve_exam' | 'create_schedule' | 'learn' | 'exam' | 'theory' | 'scramble_exam' | 'similar_exam' | 'create_file' | 'mind_map' | 'generate_image' | 'grader' | 'chat_document' | 'data_analysis' | 'rpg' | 'roast' | 'akinator' | 'tarot' | 'mbti' | 'flashcard' | 'numerology' | 'dream_interpreter' | 'caption_gen' | 'face_reading' | 'debate' | 'mystery' | 'rapper' | 'emoji_quiz' | 'dating_sim' | 'food_randomizer' | 'fashion_police' | 'werewolf_moderator' | 'style_transfer' | 'rap_battle' | 'roadmap' | 'socratic' | 'mock_oral';
@@ -54,6 +55,37 @@ export interface ChatSession {
   isPinned?: boolean;
 }
 
+export interface PetData {
+  name: string;
+  type: 'cat' | 'dog' | 'bunny' | 'robot';
+  hunger: number; // 0-100
+  happiness: number; // 0-100
+  energy: number; // 0-100
+  lastInteraction?: string; // ISO date string
+}
+
+export interface LearningStats {
+  totalMessages: number;
+  studyStreak: number;
+  lastStudyDate: string; // ISO Date
+  dailyActivity: Record<string, number>; // "YYYY-MM-DD": count
+  modeUsage: Record<string, number>; // "mode_id": count
+}
+
+export interface SharedResource {
+  id: string;
+  user_id: string;
+  username: string;
+  avatar: string;
+  type: 'flashcard' | 'mindmap' | 'exercise' | 'image' | 'document';
+  title: string;
+  description: string;
+  data: any; // Stores Flashcard[], MindMapNode, or Message content
+  likes: number;
+  downloads: number;
+  created_at: string;
+}
+
 export interface User {
   username: string;
   password: string;
@@ -66,4 +98,8 @@ export interface User {
   backgroundUrl?: string;
   isDemo?: boolean;
   customInstruction?: string;
+  xp?: number;
+  level?: number;
+  pet?: PetData;
+  stats?: LearningStats;
 }

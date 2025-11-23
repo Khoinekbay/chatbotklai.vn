@@ -1,26 +1,32 @@
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { type Flashcard } from '../types';
-import { XIcon, ShuffleIcon, RestoreIcon, PlusIcon } from './Icons';
+import { type Flashcard, type User } from '../types';
+import { XIcon, ShuffleIcon, RestoreIcon, PlusIcon, GlobeIcon } from './Icons';
+import { api } from '../utils/api';
 
 interface FlashcardViewProps {
   flashcards: Flashcard[];
   onClose: () => void;
+  currentUser: User;
 }
 
-const FlashcardView: React.FC<FlashcardViewProps> = ({ flashcards, onClose }) => {
+const FlashcardView: React.FC<FlashcardViewProps> = ({ flashcards, onClose, currentUser }) => {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isFlipped, setIsFlipped] = useState(false);
   const [cards, setCards] = useState(flashcards);
   const [slideDirection, setSlideDirection] = useState<'left' | 'right' | 'none'>('none');
   
-  // Adding new card state
   const [isAdding, setIsAdding] = useState(false);
   const [newTerm, setNewTerm] = useState('');
   const [newTranslation, setNewTranslation] = useState('');
   const [newDefinition, setNewDefinition] = useState('');
 
-  // Touch handling refs
+  // Publish State
+  const [isPublishing, setIsPublishing] = useState(false);
+  const [publishTitle, setPublishTitle] = useState('');
+  const [publishDesc, setPublishDesc] = useState('');
+  const [publishSuccess, setPublishSuccess] = useState(false);
+
   const touchStartRef = useRef<{x: number, y: number} | null>(null);
   const ignoreClickRef = useRef(false);
 
@@ -48,7 +54,7 @@ const FlashcardView: React.FC<FlashcardViewProps> = ({ flashcards, onClose }) =>
   }, [currentIndex]);
 
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
-    if (isAdding) return;
+    if (isAdding || isPublishing) return;
     if (e.key === 'ArrowRight') handleNext();
     if (e.key === 'ArrowLeft') handlePrev();
     if (e.key === ' ' || e.key === 'Enter') {
@@ -56,7 +62,7 @@ const FlashcardView: React.FC<FlashcardViewProps> = ({ flashcards, onClose }) =>
         setIsFlipped(prev => !prev);
     }
     if (e.key === 'Escape') onClose();
-  }, [handleNext, handlePrev, onClose, isAdding]);
+  }, [handleNext, handlePrev, onClose, isAdding, isPublishing]);
 
   useEffect(() => {
     window.addEventListener('keydown', handleKeyDown);
@@ -97,7 +103,25 @@ const FlashcardView: React.FC<FlashcardViewProps> = ({ flashcards, onClose }) =>
       setTimeout(() => setCurrentIndex(cards.length), 50);
   };
 
-  // --- Touch & Swipe Handlers ---
+  const handlePublish = async () => {
+      if (!publishTitle.trim()) return;
+      const success = await api.publishResource({
+          username: currentUser.username,
+          avatar: currentUser.avatar || '😊',
+          type: 'flashcard',
+          title: publishTitle,
+          description: publishDesc,
+          data: cards
+      });
+      if (success) {
+          setPublishSuccess(true);
+          setTimeout(() => {
+              setPublishSuccess(false);
+              setIsPublishing(false);
+          }, 2000);
+      }
+  };
+
   const handleTouchStart = (e: React.TouchEvent) => {
       touchStartRef.current = {
           x: e.changedTouches[0].clientX,
@@ -106,7 +130,7 @@ const FlashcardView: React.FC<FlashcardViewProps> = ({ flashcards, onClose }) =>
   };
 
   const handleTouchEnd = (e: React.TouchEvent) => {
-      if (!touchStartRef.current || isAdding) return;
+      if (!touchStartRef.current || isAdding || isPublishing) return;
       
       const touchEndX = e.changedTouches[0].clientX;
       const touchEndY = e.changedTouches[0].clientY;
@@ -116,15 +140,12 @@ const FlashcardView: React.FC<FlashcardViewProps> = ({ flashcards, onClose }) =>
       
       touchStartRef.current = null;
 
-      // Swipe Detection (Threshold 50px, dominant horizontal)
       if (Math.abs(diffX) > 50 && Math.abs(diffX) > Math.abs(diffY) * 1.5) {
-          if (diffX > 0) handleNext(); // Swipe Left -> Next
-          else handlePrev(); // Swipe Right -> Prev
-          
+          if (diffX > 0) handleNext();
+          else handlePrev();
           ignoreClickRef.current = true;
           setTimeout(() => ignoreClickRef.current = false, 300);
       } 
-      // Tap Detection (Movement < 10px)
       else if (Math.abs(diffX) < 10 && Math.abs(diffY) < 10) {
           setIsFlipped(prev => !prev);
           ignoreClickRef.current = true;
@@ -133,9 +154,8 @@ const FlashcardView: React.FC<FlashcardViewProps> = ({ flashcards, onClose }) =>
   };
 
   const handleClick = (e: React.MouseEvent) => {
-      if (isAdding) return;
+      if (isAdding || isPublishing) return;
       if (ignoreClickRef.current) return;
-      
       e.preventDefault();
       setIsFlipped(prev => !prev);
   };
@@ -159,6 +179,11 @@ const FlashcardView: React.FC<FlashcardViewProps> = ({ flashcards, onClose }) =>
             </div>
           </h2>
           <div className="flex items-center gap-2 bg-white/10 rounded-full p-1">
+             {!currentUser.isDemo && (
+                 <button onClick={() => setIsPublishing(true)} className="p-2 rounded-full hover:bg-white/20 transition-colors text-white/80 hover:text-white" title="Chia sẻ lên Hub">
+                    <GlobeIcon className="w-5 h-5" />
+                 </button>
+             )}
              <button onClick={() => setIsAdding(true)} className="p-2 rounded-full hover:bg-white/20 transition-colors text-white/80 hover:text-white" title="Thêm thẻ mới">
                 <PlusIcon className="w-5 h-5" />
              </button>
@@ -175,14 +200,13 @@ const FlashcardView: React.FC<FlashcardViewProps> = ({ flashcards, onClose }) =>
           </div>
         </div>
 
-        {/* Progress Bar */}
         <div className="w-full bg-white/10 h-2 rounded-full overflow-hidden">
           <div className="h-full bg-gradient-to-r from-blue-500 to-purple-500 transition-all duration-300 ease-out shadow-[0_0_10px_rgba(59,130,246,0.5)]" style={{ width: `${progress}%` }} />
         </div>
 
-        {/* Card Container */}
         <div className="perspective-1000 w-full h-[400px] relative group touch-pan-y">
           
+          {/* Add Card Modal */}
           {isAdding && (
               <div className="absolute inset-0 z-20 bg-card rounded-3xl p-6 md:p-8 flex flex-col gap-3 shadow-2xl border-2 border-brand animate-message-pop-in overflow-y-auto" onClick={e => e.stopPropagation()}>
                   <h3 className="text-xl font-bold text-text-primary text-center mb-2">Thêm thẻ mới</h3>
@@ -205,6 +229,30 @@ const FlashcardView: React.FC<FlashcardViewProps> = ({ flashcards, onClose }) =>
               </div>
           )}
 
+          {/* Publish Modal */}
+          {isPublishing && (
+              <div className="absolute inset-0 z-20 bg-card rounded-3xl p-6 md:p-8 flex flex-col gap-3 shadow-2xl border-2 border-purple-500 animate-message-pop-in overflow-y-auto" onClick={e => e.stopPropagation()}>
+                  <h3 className="text-xl font-bold text-text-primary text-center mb-2">Chia sẻ lên Hub</h3>
+                  <p className="text-xs text-center text-text-secondary mb-2">Bộ thẻ này sẽ được công khai cho cộng đồng.</p>
+                  <div className="space-y-1">
+                      <label className="text-xs font-bold text-text-secondary uppercase">Tiêu đề</label>
+                      <input autoFocus type="text" value={publishTitle} onChange={(e) => setPublishTitle(e.target.value)} className="w-full p-3 bg-input-bg border border-border rounded-xl focus:ring-2 focus:ring-brand outline-none text-text-primary" placeholder="VD: 3000 từ vựng IELTS thông dụng" />
+                  </div>
+                  <div className="space-y-1 flex-1">
+                      <label className="text-xs font-bold text-text-secondary uppercase">Mô tả ngắn</label>
+                      <textarea value={publishDesc} onChange={(e) => setPublishDesc(e.target.value)} className="w-full h-full min-h-[80px] p-3 bg-input-bg border border-border rounded-xl focus:ring-2 focus:ring-brand outline-none resize-none text-text-primary" placeholder="VD: Tổng hợp từ vựng chủ đề Environment..." />
+                  </div>
+                  {publishSuccess ? (
+                      <div className="bg-green-500/10 text-green-600 text-center p-3 rounded-xl font-bold animate-pulse">Đã đăng thành công! 🎉</div>
+                  ) : (
+                      <div className="flex gap-3 mt-2">
+                          <button onClick={() => setIsPublishing(false)} className="flex-1 py-3 bg-sidebar hover:bg-card-hover text-text-primary font-bold rounded-xl transition-colors">Hủy</button>
+                          <button onClick={handlePublish} disabled={!publishTitle.trim()} className="flex-1 py-3 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-xl transition-colors disabled:opacity-50">Đăng</button>
+                      </div>
+                  )}
+              </div>
+          )}
+
           <div 
             key={currentIndex}
             className={`
@@ -218,7 +266,6 @@ const FlashcardView: React.FC<FlashcardViewProps> = ({ flashcards, onClose }) =>
             onTouchStart={handleTouchStart}
             onTouchEnd={handleTouchEnd}
           >
-            {/* Front */}
             <div className="absolute inset-0 backface-hidden bg-card border border-border rounded-3xl flex flex-col items-center justify-center p-8 text-center shadow-inner">
                <div className="flex-1 flex flex-col items-center justify-center w-full animate-content-pop">
                    <span className="text-xs font-bold text-text-secondary uppercase tracking-widest mb-6 px-3 py-1 bg-sidebar rounded-full border border-border">Từ vựng</span>
@@ -227,7 +274,6 @@ const FlashcardView: React.FC<FlashcardViewProps> = ({ flashcards, onClose }) =>
                <p className="mt-auto text-xs text-text-secondary animate-pulse flex items-center gap-1 pt-4 opacity-60">👆 Chạm để lật - Vuốt để chuyển</p>
             </div>
 
-            {/* Back */}
             <div className="absolute inset-0 backface-hidden rotate-y-180 bg-gradient-to-br from-brand/5 to-purple-500/5 border-2 border-brand/30 rounded-3xl flex flex-col items-center justify-center p-8 text-center bg-card shadow-lg">
                <div className="flex-1 flex flex-col items-center justify-center w-full">
                    <span className="text-xs font-bold text-brand uppercase tracking-widest mb-4 px-3 py-1 bg-brand/10 rounded-full">Nghĩa</span>
@@ -243,11 +289,10 @@ const FlashcardView: React.FC<FlashcardViewProps> = ({ flashcards, onClose }) =>
           </div>
         </div>
 
-        {/* Controls */}
         <div className="flex items-center justify-center gap-3 w-full max-w-lg mx-auto px-2">
           <button 
             onClick={handlePrev} 
-            disabled={currentIndex === 0 || isAdding} 
+            disabled={currentIndex === 0 || isAdding || isPublishing} 
             className="flex-1 py-3 rounded-xl font-bold bg-white/10 hover:bg-white/20 disabled:opacity-30 disabled:cursor-not-allowed transition-all active:scale-95 text-white border border-white/10 flex items-center justify-center"
           >
             ← <span className="hidden sm:inline ml-2">Quay lại</span>
@@ -255,7 +300,7 @@ const FlashcardView: React.FC<FlashcardViewProps> = ({ flashcards, onClose }) =>
           
           <button 
             onClick={() => setIsFlipped(p => !p)} 
-            disabled={isAdding} 
+            disabled={isAdding || isPublishing} 
             className="flex-1 py-3 rounded-xl font-bold bg-brand/80 hover:bg-brand text-white transition-all shadow-lg active:scale-95 flex items-center justify-center gap-2 border border-white/10"
           >
              <span className="text-xl font-serif">↺</span> <span className="text-sm">Lật</span>
@@ -263,7 +308,7 @@ const FlashcardView: React.FC<FlashcardViewProps> = ({ flashcards, onClose }) =>
 
           <button 
             onClick={handleNext} 
-            disabled={currentIndex === cards.length - 1 || isAdding} 
+            disabled={currentIndex === cards.length - 1 || isAdding || isPublishing} 
             className="flex-1 py-3 rounded-xl font-bold bg-white text-black hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-lg active:scale-95 flex items-center justify-center"
           >
             <span className="hidden sm:inline mr-2">Tiếp theo</span> →

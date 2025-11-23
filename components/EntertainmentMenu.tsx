@@ -1,14 +1,15 @@
 
 import React from 'react';
-import { GamepadIcon, TarotIcon, WindIcon, FireIcon, GenieIcon, PuzzleIcon, FaceMaskIcon, SwordsIcon, SpyIcon, MicStageIcon, EmojiPuzzleIcon, BrokenHeartIcon, BurgerIcon, TShirtIcon, WolfIcon, ScrollIcon, MicBattleIcon } from './Icons';
+import { GamepadIcon, TarotIcon, WindIcon, FireIcon, GenieIcon, PuzzleIcon, FaceMaskIcon, SwordsIcon, SpyIcon, MicStageIcon, EmojiPuzzleIcon, BrokenHeartIcon, BurgerIcon, TShirtIcon, WolfIcon, ScrollIcon, MicBattleIcon, PawIcon } from './Icons';
 import { Mode } from '../types';
 
 interface EntertainmentMenuProps {
-  onSelect: (mode: Mode | 'breathing') => void;
+  onSelect: (mode: Mode | 'breathing' | 'pet') => void;
 }
 
 const EntertainmentMenu: React.FC<EntertainmentMenuProps> = ({ onSelect }) => {
   const items = [
+    { id: 'pet', label: 'Thú Cưng AI', icon: <PawIcon className="w-6 h-6 text-orange-500" />, desc: 'Nuôi mèo ảo (Beta)' },
     { id: 'face_reading', label: 'Nhân Tướng Học', icon: <FaceMaskIcon className="w-6 h-6 text-pink-500" />, desc: 'AI xem tướng mặt' },
     { id: 'fashion_police', label: 'Cảnh Sát Thời Trang', icon: <TShirtIcon className="w-6 h-6 text-indigo-500" />, desc: 'Chấm điểm outfit' },
     { id: 'debate', label: 'Sàn Đấu Tranh Biện', icon: <SwordsIcon className="w-6 h-6 text-orange-600" />, desc: 'Thử thách tư duy' },

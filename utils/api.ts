@@ -1,6 +1,6 @@
 
 
-import { User, ChatSession } from '../types';
+import { User, ChatSession, LearningStats, SharedResource } from '../types';
 import { supabase } from './supabaseClient';
 
 const USERS_KEY = 'kl_ai_users';
@@ -101,7 +101,11 @@ export const api = {
                         fontPreference: profile.font_preference,
                         backgroundUrl: profile.background_url,
                         customInstruction: profile.custom_instruction,
-                        isDemo: false
+                        isDemo: false,
+                        xp: profile.xp || 0,
+                        level: profile.level || 1,
+                        pet: profile.pet || undefined,
+                        stats: profile.stats || undefined
                     };
                 }
                 
@@ -118,7 +122,9 @@ export const api = {
                         theme: 'dark',
                         avatar: '😊',
                         fontPreference: "'Inter', sans-serif",
-                        isDemo: false
+                        isDemo: false,
+                        xp: 0,
+                        level: 1
                     };
 
                     const { error: insertError } = await supabase.from('profiles').insert({
@@ -128,7 +134,9 @@ export const api = {
                         ai_tone: basicUser.aiTone,
                         theme: basicUser.theme,
                         avatar: basicUser.avatar,
-                        font_preference: basicUser.fontPreference
+                        font_preference: basicUser.fontPreference,
+                        xp: 0,
+                        level: 1
                     });
                     
                     if (!insertError) {
@@ -197,7 +205,9 @@ export const api = {
                     theme: 'dark',
                     avatar: '😊',
                     fontPreference: "'Inter', sans-serif",
-                    isDemo: false
+                    isDemo: false,
+                    xp: 0,
+                    level: 1
                 };
 
                 // Insert lại profile vào DB
@@ -208,7 +218,9 @@ export const api = {
                     ai_tone: basicUser.aiTone,
                     theme: basicUser.theme,
                     avatar: basicUser.avatar,
-                    font_preference: basicUser.fontPreference
+                    font_preference: basicUser.fontPreference,
+                    xp: 0,
+                    level: 1
                 });
 
                 return { user: basicUser, token: data.session?.access_token || '' };
@@ -226,7 +238,11 @@ export const api = {
                     fontPreference: profile.font_preference,
                     backgroundUrl: profile.background_url,
                     customInstruction: profile.custom_instruction,
-                    isDemo: false
+                    isDemo: false,
+                    xp: profile.xp || 0,
+                    level: profile.level || 1,
+                    pet: profile.pet || undefined,
+                    stats: profile.stats || undefined
                 },
                 token: data.session?.access_token || ''
             };
@@ -241,6 +257,9 @@ export const api = {
         if (!user || user.password !== password) {
             throw new Error('Tên đăng nhập hoặc mật khẩu không đúng.');
         }
+        // Ensure legacy users have XP
+        if (user.xp === undefined) { user.xp = 0; user.level = 1; }
+        
         return { 
             user, 
             token: `local-token-${Date.now()}` 
@@ -261,7 +280,9 @@ export const api = {
         theme: 'dark',
         avatar: '😊',
         fontPreference: "'Inter', sans-serif",
-        isDemo: false
+        isDemo: false,
+        xp: 0,
+        level: 1
     };
 
     if (supabase) {
@@ -308,7 +329,9 @@ export const api = {
             ai_tone: newUser.aiTone,
             theme: newUser.theme,
             avatar: newUser.avatar,
-            font_preference: newUser.fontPreference
+            font_preference: newUser.fontPreference,
+            xp: 0,
+            level: 1
         });
 
         if (profileError) console.error("Error creating profile:", profileError);
@@ -336,7 +359,9 @@ export const api = {
           aiTone: 'balanced',
           theme: 'dark',
           avatar: '🚀',
-          isDemo: true
+          isDemo: true,
+          xp: 0,
+          level: 1
       };
       return { user: demoUser, token: `demo-token-${Date.now()}` };
   },
@@ -355,6 +380,10 @@ export const api = {
               if (updates.customInstruction !== undefined) dbUpdates.custom_instruction = updates.customInstruction;
               
               if (updates.email !== undefined) dbUpdates.email = updates.email;
+              if (updates.xp !== undefined) dbUpdates.xp = updates.xp;
+              if (updates.level !== undefined) dbUpdates.level = updates.level;
+              if (updates.pet !== undefined) dbUpdates.pet = updates.pet;
+              if (updates.stats !== undefined) dbUpdates.stats = updates.stats;
 
               if (updates.password) {
                   const { error } = await supabase.auth.updateUser({ password: updates.password });
@@ -362,7 +391,15 @@ export const api = {
               }
 
               if (Object.keys(dbUpdates).length > 0) {
-                  await supabase.from('profiles').update(dbUpdates).eq('id', user.id);
+                  const { error } = await supabase.from('profiles').update(dbUpdates).eq('id', user.id);
+                  if (error) {
+                      // Gracefully ignore missing columns for new features during transition
+                      if (error.code === '42703') {
+                          console.warn("Skipping update: Database column missing (XP/Pet/Stats).");
+                      } else {
+                          console.error("Update user failed:", error);
+                      }
+                  }
               }
               return { username, ...updates } as User;
           }
@@ -377,6 +414,47 @@ export const api = {
           return updatedUser;
       }
       return { username, ...updates } as User;
+  },
+  
+  // --- Smart Stats Update Helper ---
+  updateLearningStats: async (username: string, currentStats: LearningStats | undefined, mode: string) => {
+      const today = new Date().toISOString().split('T')[0];
+      const stats = currentStats ? { ...currentStats } : {
+          totalMessages: 0,
+          studyStreak: 0,
+          lastStudyDate: '',
+          dailyActivity: {},
+          modeUsage: {}
+      };
+
+      // Update Message Count
+      stats.totalMessages = (stats.totalMessages || 0) + 1;
+
+      // Update Mode Usage
+      stats.modeUsage = { ...(stats.modeUsage || {}) };
+      stats.modeUsage[mode] = (stats.modeUsage[mode] || 0) + 1;
+
+      // Update Daily Activity
+      stats.dailyActivity = { ...(stats.dailyActivity || {}) };
+      stats.dailyActivity[today] = (stats.dailyActivity[today] || 0) + 1;
+
+      // Update Streak
+      if (stats.lastStudyDate !== today) {
+          const yesterday = new Date();
+          yesterday.setDate(yesterday.getDate() - 1);
+          const yesterdayStr = yesterday.toISOString().split('T')[0];
+
+          if (stats.lastStudyDate === yesterdayStr) {
+              stats.studyStreak = (stats.studyStreak || 0) + 1;
+          } else if (stats.lastStudyDate < yesterdayStr) {
+              stats.studyStreak = 1; // Reset
+          } else if (!stats.studyStreak) {
+              stats.studyStreak = 1; // First time
+          }
+          stats.lastStudyDate = today;
+      }
+
+      return api.updateUser(username, { stats });
   },
 
   // --- Chat Data Syncing ---
@@ -456,5 +534,102 @@ export const api = {
       const chats = getLocalChats(username);
       const newChats = chats.filter(c => c.id !== sessionId);
       saveLocalChats(username, newChats);
+  },
+
+  // --- Leaderboard ---
+  getLeaderboard: async (): Promise<{ username: string; avatar: string; xp: number; level: number }[]> => {
+      if (supabase) {
+          try {
+              const { data, error } = await supabase
+                  .from('profiles')
+                  .select('username, avatar, xp, level')
+                  .order('xp', { ascending: false })
+                  .limit(20);
+              
+              if (error) {
+                  // Handle missing 'xp' column error gracefully
+                  if (error.code === '42703' || error.message.includes('does not exist')) {
+                      console.warn("⚠️ Database Schema Missing XP columns");
+                      return [];
+                  }
+                  throw error;
+              }
+              
+              if (data) {
+                  return data.map((item: any) => ({
+                      username: item.username || 'Người dùng ẩn danh',
+                      avatar: item.avatar || '😊',
+                      xp: item.xp || 0,
+                      level: item.level || 1
+                  }));
+              }
+          } catch (e) {
+              console.error("Could not fetch leaderboard", e);
+          }
+      }
+      
+      // Fallback: Local users (sorted)
+      const users = getLocalUsers();
+      return Object.values(users)
+          .map(u => ({
+              username: u.username,
+              avatar: u.avatar || '😊',
+              xp: u.xp || 0,
+              level: u.level || 1
+          }))
+          .sort((a, b) => b.xp - a.xp)
+          .slice(0, 20);
+  },
+
+  // --- Shared Resources (Community Hub) ---
+  getSharedResources: async (typeFilter?: 'flashcard' | 'mindmap'): Promise<SharedResource[]> => {
+      if (supabase) {
+          try {
+              let query = supabase
+                  .from('shared_resources')
+                  .select('*')
+                  .order('created_at', { ascending: false })
+                  .limit(50);
+              
+              if (typeFilter) {
+                  query = query.eq('type', typeFilter);
+              }
+
+              const { data, error } = await query;
+              if (error) throw error;
+              
+              return data as SharedResource[];
+          } catch (e) {
+              console.error("Could not fetch shared resources", e);
+              return [];
+          }
+      }
+      return [];
+  },
+
+  publishResource: async (resource: Omit<SharedResource, 'id' | 'user_id' | 'created_at' | 'likes' | 'downloads'>): Promise<boolean> => {
+      if (supabase) {
+          const { data: { user } } = await supabase.auth.getUser();
+          if (!user) return false;
+
+          const { error } = await supabase
+              .from('shared_resources')
+              .insert({
+                  user_id: user.id,
+                  username: resource.username,
+                  avatar: resource.avatar,
+                  type: resource.type,
+                  title: resource.title,
+                  description: resource.description,
+                  data: resource.data
+              });
+          
+          if (error) {
+              console.error("Publish failed", error);
+              return false;
+          }
+          return true;
+      }
+      return false;
   }
 };

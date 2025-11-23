@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { type Message, type MindMapNode, type FollowUpAction, type Flashcard } from '../types';
-import { UserIcon, AngryBotIcon, SpeakerIcon, ShareIcon, CheckIcon, BellPlusIcon, FileIcon, DownloadIcon, MindMapIcon, FlashcardIcon, ThumbUpIcon, ThumbDownIcon, HelpCircleIcon, RegenerateIcon, ChevronUpIcon, ExplainIcon, ExampleIcon, SummarizeIcon, ChevronDownIcon, CalendarPlusIcon } from './Icons';
+import { UserIcon, AngryBotIcon, SpeakerIcon, ShareIcon, CheckIcon, BellPlusIcon, FileIcon, DownloadIcon, MindMapIcon, FlashcardIcon, ThumbUpIcon, ThumbDownIcon, HelpCircleIcon, RegenerateIcon, ChevronUpIcon, ExplainIcon, ExampleIcon, SummarizeIcon, ChevronDownIcon, CalendarPlusIcon, GlobeIcon } from './Icons';
 import DataChart from './DataChart';
 
 
@@ -27,6 +27,7 @@ interface ChatMessageProps {
   onOpenFlashcards?: (data: Flashcard[]) => void;
   onAskSelection?: (selectedText: string) => void;
   onRegenerate?: () => void;
+  onPublish?: (message: Message) => void;
   userAvatar?: string;
 }
 
@@ -90,7 +91,7 @@ const markdownToHTML = (markdown: string): string => {
   return html;
 }
 
-const ChatMessage: React.FC<ChatMessageProps> = ({ message, isLastMessage = false, isLoading = false, onFollowUpClick, onApplySchedule, onOpenMindMap, onOpenFlashcards, onAskSelection, onRegenerate, userAvatar }) => {
+const ChatMessage: React.FC<ChatMessageProps> = ({ message, isLastMessage = false, isLoading = false, onFollowUpClick, onApplySchedule, onOpenMindMap, onOpenFlashcards, onAskSelection, onRegenerate, onPublish, userAvatar }) => {
   const [displayedText, setDisplayedText] = useState('');
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isCopied, setIsCopied] = useState(false);
@@ -605,7 +606,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, isLastMessage = fals
         </div>
         
         <div className={`flex items-center flex-wrap gap-2 mt-2 ${isUser ? 'justify-end' : 'pl-11'}`}>
-          {!isUser && !message.isError && message.text && (!isLastMessage || !isLoading) && (
+          {!message.isError && message.text && (!isLastMessage || !isLoading) && (
               <>
                   <button 
                     onClick={handleToggleSpeech} 
@@ -623,13 +624,22 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, isLastMessage = fals
                   >
                       {isCopied ? <CheckIcon className="w-4 h-4 text-green-500" /> : <ShareIcon className="w-4 h-4 text-text-secondary" />}
                   </button>
-                  <button onClick={() => handleFeedback('like')} className="p-1.5 bg-card-hover/60 hover:bg-card-hover rounded-full transition-colors" title="Hài lòng">
-                      <ThumbUpIcon className={`w-4 h-4 transition-colors ${feedback === 'like' ? 'text-brand' : 'text-text-secondary'}`} />
-                  </button>
-                  <button onClick={() => handleFeedback('dislike')} className="p-1.5 bg-card-hover/60 hover:bg-card-hover rounded-full transition-colors" title="Không hài lòng">
-                      <ThumbDownIcon className={`w-4 h-4 transition-colors ${feedback === 'dislike' ? 'text-red-500' : 'text-text-secondary'}`} />
-                  </button>
-                  {isLastMessage && onRegenerate && (
+                  {!isUser && (
+                      <>
+                        <button onClick={() => handleFeedback('like')} className="p-1.5 bg-card-hover/60 hover:bg-card-hover rounded-full transition-colors" title="Hài lòng">
+                            <ThumbUpIcon className={`w-4 h-4 transition-colors ${feedback === 'like' ? 'text-brand' : 'text-text-secondary'}`} />
+                        </button>
+                        <button onClick={() => handleFeedback('dislike')} className="p-1.5 bg-card-hover/60 hover:bg-card-hover rounded-full transition-colors" title="Không hài lòng">
+                            <ThumbDownIcon className={`w-4 h-4 transition-colors ${feedback === 'dislike' ? 'text-red-500' : 'text-text-secondary'}`} />
+                        </button>
+                      </>
+                  )}
+                  {onPublish && (
+                      <button onClick={() => onPublish(message)} className="p-1.5 bg-card-hover/60 hover:bg-card-hover rounded-full transition-colors text-purple-500" title="Chia sẻ lên Hub">
+                          <GlobeIcon className="w-4 h-4" />
+                      </button>
+                  )}
+                  {isLastMessage && onRegenerate && !isUser && (
                     <button onClick={onRegenerate} className="p-1.5 bg-card-hover/60 hover:bg-card-hover rounded-full transition-colors" title="Tạo lại phản hồi">
                         <RegenerateIcon className="w-4 h-4 text-text-secondary"/>
                     </button>

@@ -1,5 +1,4 @@
 
-
 import React, { useState, useEffect, useRef } from 'react';
 import { KlAiLogo } from './Icons';
 import { type User } from '../types';
@@ -17,11 +16,20 @@ const Auth: React.FC<AuthProps> = ({ onAuthSuccess }) => {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [connectionStatus, setConnectionStatus] = useState<'checking' | 'connected' | 'error'>('checking');
   
   const passwordInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     document.documentElement.classList.add('dark');
+    
+    // Check connection on mount
+    const check = async () => {
+        const isConnected = await api.checkConnection();
+        setConnectionStatus(isConnected ? 'connected' : 'error');
+    };
+    check();
+
     return () => {
         // Optional cleanup
     }
@@ -107,6 +115,14 @@ const Auth: React.FC<AuthProps> = ({ onAuthSuccess }) => {
       <div className="absolute inset-0 z-0 opacity-20 pointer-events-none">
         <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] bg-brand/30 rounded-full blur-[100px]" />
         <div className="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] bg-purple-500/30 rounded-full blur-[100px]" />
+      </div>
+
+      {/* Connection Status Indicator */}
+      <div className="absolute top-4 right-4 z-20 flex items-center gap-2 bg-card/50 backdrop-blur-md px-3 py-1.5 rounded-full border border-border/50 shadow-sm animate-slide-in-up">
+          <div className={`w-2 h-2 rounded-full ${connectionStatus === 'connected' ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.5)]' : connectionStatus === 'error' ? 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.5)]' : 'bg-yellow-500 animate-pulse'}`}></div>
+          <span className={`text-xs font-medium ${connectionStatus === 'connected' ? 'text-green-600 dark:text-green-400' : connectionStatus === 'error' ? 'text-red-600 dark:text-red-400' : 'text-yellow-600 dark:text-yellow-400'}`}>
+              {connectionStatus === 'connected' ? 'Hệ thống Online' : connectionStatus === 'error' ? 'Mất kết nối Server' : 'Đang kết nối...'}
+          </span>
       </div>
 
       <div className="w-full max-w-md z-10">

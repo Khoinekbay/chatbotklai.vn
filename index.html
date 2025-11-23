@@ -193,6 +193,24 @@
         0%, 100% { transform: scale(1); }
         50% { transform: scale(1.2); }
       }
+      
+      /* Marquee Title Animation */
+      @keyframes marquee {
+        0% { transform: translateX(0%); }
+        10% { transform: translateX(0%); } /* Pause at start */
+        100% { transform: translateX(-50%); }
+      }
+      
+      .animate-marquee {
+        display: inline-block;
+        white-space: nowrap;
+        animation: marquee 15s linear infinite;
+      }
+      
+      .mask-fade-edges {
+        mask-image: linear-gradient(90deg, transparent 0%, black 5%, black 95%, transparent 100%);
+        -webkit-mask-image: linear-gradient(90deg, transparent 0%, black 5%, black 95%, transparent 100%);
+      }
 
       /* Table styles for markdown */
       .prose .table-wrapper {
