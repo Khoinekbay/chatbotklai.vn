@@ -63,30 +63,16 @@ const timeoutPromise = (promise: Promise<any>, ms: number) => {
 };
 
 // --- Helper: Generate Safe Auth Email ---
-// Removes spaces and special chars to satisfy Supabase Email validation
 export const generateAuthEmail = (username: string) => {
     if (!username) throw new Error("Tên đăng nhập không được để trống");
-
-    // 1. Lowercase
     let clean = username.trim().toLowerCase();
-    
-    // 2. Remove Vietnamese accents (NFD normalization)
     clean = clean.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-
-    // 3. Replace spaces with underscores
     clean = clean.replace(/\s+/g, '_');
-    
-    // 4. Remove non-alphanumeric characters (except . _ -)
     clean = clean.replace(/[^a-z0-9._-]/g, '');
-    
-    // 5. Remove leading/trailing special chars
     clean = clean.replace(/^[^a-z0-9]+|[^a-z0-9]+$/g, '');
-    
-    // 6. Validation
     if (clean.length < 3) {
         throw new Error("Tên đăng nhập phải chứa ít nhất 3 ký tự chữ hoặc số.");
     }
-    
     return `${clean}@kl-ai.app`;
 };
 
@@ -98,7 +84,6 @@ export const api = {
   checkConnection: async (): Promise<boolean> => {
       if (!supabase) return false;
       try {
-          // Check auth service health with timeout
           const { error } = await timeoutPromise(supabase.auth.getSession(), 3000) as any;
           return !error;
       } catch {
@@ -108,10 +93,8 @@ export const api = {
 
   // --- Session Restoration ---
   restoreSession: async (): Promise<User | null> => {
-      // Try Cloud First
       if (supabase) {
           try {
-            // Use timeout to prevent hang on slow network
             const { data: { session }, error: sessionError } = await timeoutPromise(supabase.auth.getSession(), 3000) as any;
             
             if (session?.user) {
@@ -119,7 +102,7 @@ export const api = {
                 if (profile) {
                     return {
                         username: profile.username,
-                        password: '', // Password not stored in profile
+                        password: '',
                         email: profile.email,
                         aiRole: profile.ai_role,
                         aiTone: profile.ai_tone,
@@ -136,7 +119,6 @@ export const api = {
                     };
                 }
                 
-                // AUTO-HEAL
                 if (error && session.user) {
                     const username = session.user.user_metadata?.username || session.user.email?.split('@')[0] || 'user';
                     const basicUser: User = {
@@ -156,11 +138,10 @@ export const api = {
                 }
             }
           } catch (e) {
-              console.warn("Cloud session restore failed or timed out, checking local", e);
+              console.warn("Cloud session restore failed, checking local");
           }
       }
       
-      // Fallback to Local Cache
       const storedUserStr = localStorage.getItem('kl-ai-user-data');
       if (storedUserStr) {
           return JSON.parse(storedUserStr);
@@ -169,73 +150,60 @@ export const api = {
   },
 
   // --- Authentication ---
-
   login: async (username: string, password: string): Promise<{ user: User; token: string }> => {
     const cleanUsername = username.trim();
     if (supabase) {
-        // Cloud Login
-        let authEmail;
-        try { authEmail = generateAuthEmail(cleanUsername); } catch (e: any) { throw new Error(e.message); }
-        
-        const { data, error } = await supabase.auth.signInWithPassword({
-            email: authEmail,
-            password: password,
-        });
+        try {
+            let authEmail;
+            try { authEmail = generateAuthEmail(cleanUsername); } catch (e: any) { throw new Error(e.message); }
+            
+            const { data, error } = await supabase.auth.signInWithPassword({
+                email: authEmail,
+                password: password,
+            });
 
-        if (error) {
-            // Fallback check for local user
+            if (error) throw error;
+
+            if (data.user) {
+                 const { data: profile } = await supabase.from('profiles').select('*').eq('id', data.user.id).single();
+                 const userObj = profile ? {
+                    username: profile.username,
+                    email: profile.email,
+                    aiRole: profile.ai_role,
+                    aiTone: profile.ai_tone,
+                    theme: profile.theme,
+                    avatar: profile.avatar,
+                    fontPreference: profile.font_preference,
+                    backgroundUrl: profile.background_url,
+                    customInstruction: profile.custom_instruction,
+                    isDemo: false,
+                    xp: profile.xp || 0,
+                    level: profile.level || 1,
+                    pet: profile.pet || undefined,
+                    stats: profile.stats || undefined,
+                    password: ''
+                 } : { username: cleanUsername, password: '', isDemo: false };
+
+                 return { user: userObj, token: data.session?.access_token || '' };
+            }
+        } catch (error: any) {
+             // Fallback check for local user
             const users = getLocalUsers();
             if (users[cleanUsername] && users[cleanUsername].password === password) {
                  return { user: users[cleanUsername], token: `local-token-${Date.now()}` };
             }
-            if (error.message.includes("Invalid login credentials")) throw new Error("Tên đăng nhập hoặc mật khẩu không đúng.");
             throw new Error(`Lỗi đăng nhập: ${error.message}`);
         }
-
-        if (data.user) {
-             const { data: profile } = await supabase.from('profiles').select('*').eq('id', data.user.id).single();
-             if (!profile) { /* Auto-heal logic exists in restoreSession */ }
-             
-             const userObj = profile ? {
-                username: profile.username,
-                email: profile.email,
-                aiRole: profile.ai_role,
-                aiTone: profile.ai_tone,
-                theme: profile.theme,
-                avatar: profile.avatar,
-                fontPreference: profile.font_preference,
-                backgroundUrl: profile.background_url,
-                customInstruction: profile.custom_instruction,
-                isDemo: false,
-                xp: profile.xp || 0,
-                level: profile.level || 1,
-                pet: profile.pet || undefined,
-                stats: profile.stats || undefined,
-                password: ''
-             } : { username: cleanUsername, password: '', isDemo: false }; // Fallback minimal
-
-             return { user: userObj, token: data.session?.access_token || '' };
-        }
-        throw new Error("Đăng nhập thất bại");
-
-    } else {
-        // LocalStorage Login
-        await new Promise(resolve => setTimeout(resolve, 400));
-        const users = getLocalUsers();
-        const user = users[cleanUsername];
-        if (!user || user.password !== password) throw new Error('Tên đăng nhập hoặc mật khẩu không đúng.');
-        return { user, token: `local-token-${Date.now()}` };
     }
+    throw new Error("Lỗi hệ thống đăng nhập");
   },
 
   register: async (username: string, password: string, email?: string): Promise<{ user: User; token: string }> => {
     const cleanUsername = username.trim();
-    const realEmail = email ? email.trim() : null;
-
     const newUser: User = {
         username: cleanUsername,
         password: '', 
-        email: realEmail,
+        email: email,
         aiRole: 'assistant',
         aiTone: 'balanced',
         theme: 'dark',
@@ -261,34 +229,31 @@ export const api = {
              throw new Error(error.message);
         }
         
-        if (data.user && !data.session) throw new Error("Đăng ký thành công nhưng chưa có phiên làm việc. Vui lòng tắt 'Confirm Email' trong Supabase.");
-        if (!data.user) throw new Error("Đăng ký thất bại");
-
-        await supabase.from('profiles').insert({
-            id: data.user.id,
-            username: cleanUsername,
-            email: realEmail,
-            ai_role: newUser.aiRole,
-            ai_tone: newUser.aiTone,
-            theme: newUser.theme,
-            avatar: newUser.avatar,
-            font_preference: newUser.fontPreference,
-            xp: 0,
-            level: 1
-        });
-
-        return { user: newUser, token: data.session?.access_token || '' };
-
+        if (data.user) {
+            await supabase.from('profiles').insert({
+                id: data.user.id,
+                username: cleanUsername,
+                email: email,
+                ai_role: newUser.aiRole,
+                ai_tone: newUser.aiTone,
+                theme: newUser.theme,
+                avatar: newUser.avatar,
+                font_preference: newUser.fontPreference,
+                xp: 0,
+                level: 1
+            });
+            return { user: newUser, token: data.session?.access_token || '' };
+        }
     } else {
-        await new Promise(resolve => setTimeout(resolve, 400));
+        // Local Fallback
         const users = getLocalUsers();
         if (users[cleanUsername]) throw new Error('Tên đăng nhập này đã được sử dụng.');
-        
         newUser.password = password;
         users[cleanUsername] = newUser;
         saveLocalUsers(users);
         return { user: newUser, token: `local-token-${Date.now()}` };
     }
+    throw new Error("Đăng ký thất bại");
   },
   
   createDemoUser: async (): Promise<{ user: User; token: string }> => {
@@ -302,7 +267,6 @@ export const api = {
             const { data: { user } } = await supabase.auth.getUser();
             if (user) {
                 const dbUpdates: any = {};
-                // ... map updates to db columns (simplified for brevity, assumes match or handled)
                 if (updates.aiRole) dbUpdates.ai_role = updates.aiRole;
                 if (updates.aiTone) dbUpdates.ai_tone = updates.aiTone;
                 if (updates.theme) dbUpdates.theme = updates.theme;
@@ -310,7 +274,6 @@ export const api = {
                 if (updates.fontPreference) dbUpdates.font_preference = updates.fontPreference;
                 if (updates.backgroundUrl !== undefined) dbUpdates.background_url = updates.backgroundUrl;
                 if (updates.customInstruction !== undefined) dbUpdates.custom_instruction = updates.customInstruction;
-                if (updates.email !== undefined) dbUpdates.email = updates.email;
                 if (updates.xp !== undefined) dbUpdates.xp = updates.xp;
                 if (updates.level !== undefined) dbUpdates.level = updates.level;
                 if (updates.pet !== undefined) dbUpdates.pet = updates.pet;
@@ -324,7 +287,6 @@ export const api = {
           } catch(e) { console.error("Cloud update failed", e); }
       }
 
-      // Fallback / Local
       const users = getLocalUsers();
       if (users[username]) {
           const updatedUser = { ...users[username], ...updates };
@@ -355,8 +317,6 @@ export const api = {
       }
       return api.updateUser(username, { stats });
   },
-
-  // --- Chat Data Syncing ---
 
   getChatSessions: async (username: string): Promise<ChatSession[]> => {
       if (supabase) {
@@ -397,9 +357,8 @@ export const api = {
                         is_pinned: session.isPinned,
                         updated_at: new Date().toISOString()
                     });
-                return;
             }
-          } catch (e) { console.warn("Could not save chat to cloud", e); }
+          } catch (e) { /* ignore cloud error */ }
       }
       const chats = getLocalChats(username);
       const index = chats.findIndex(c => c.id === session.id);
@@ -412,8 +371,7 @@ export const api = {
           try {
             const { data: { user } } = await supabase.auth.getUser();
             if (user) await supabase.from('chats').delete().eq('id', sessionId).eq('user_id', user.id);
-            return;
-          } catch (e) { console.warn("Could not delete cloud chat", e); }
+          } catch (e) { /* ignore */ }
       }
       const chats = getLocalChats(username);
       saveLocalChats(username, chats.filter(c => c.id !== sessionId));
@@ -426,16 +384,14 @@ export const api = {
                   supabase.from('profiles').select('username, avatar, xp, level').order('xp', { ascending: false }).limit(20),
                   5000
               ) as any;
-              
               if (data && !error) return data.map((item: any) => ({ username: item.username || 'Người dùng', avatar: item.avatar || '😊', xp: item.xp || 0, level: item.level || 1 }));
-          } catch (e) { console.error("Could not fetch leaderboard", e); }
+          } catch (e) { /* ignore */ }
       }
-      
       const users = getLocalUsers();
       return Object.values(users).map(u => ({ username: u.username, avatar: u.avatar || '😊', xp: u.xp || 0, level: u.level || 1 })).sort((a, b) => b.xp - a.xp).slice(0, 20);
   },
 
-  // --- Shared Resources ---
+  // --- Shared Resources (Hybrid) ---
   getSharedResources: async (typeFilter?: 'flashcard' | 'mindmap' | 'exercise' | 'image' | 'document'): Promise<SharedResource[]> => {
       let resources: SharedResource[] = [];
 
@@ -451,19 +407,21 @@ export const api = {
               let query = supabase.from('shared_resources').select('*').order('created_at', { ascending: false }).limit(50);
               if (typeFilter) query = query.eq('type', typeFilter);
 
-              const { data, error } = await timeoutPromise(query, 5000) as any;
-              if (!error && data) resources = [...resources, ...data];
-          } catch (e) { console.error("Could not fetch shared resources from cloud", e); }
+              const { data, error } = await timeoutPromise(query, 3000) as any; // Short timeout
+              if (!error && data) resources = [...data, ...resources]; // Cloud items first usually, but we sort later
+          } catch (e) { console.warn("Cloud resource fetch skipped/failed", e); }
       }
 
-      if (typeFilter) resources = resources.filter(r => r.type === typeFilter);
-      return resources.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+      // Deduplicate by ID
+      const uniqueResources = Array.from(new Map(resources.map(item => [item.id, item])).values());
+
+      if (typeFilter) return uniqueResources.filter(r => r.type === typeFilter).sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+      return uniqueResources.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
   },
 
   publishResource: async (resource: Omit<SharedResource, 'id' | 'user_id' | 'created_at' | 'likes' | 'downloads'>): Promise<boolean> => {
-      let cloudSuccess = false;
-
-      // 1. Try Cloud Publish
+      // Strategy: Try Cloud -> If fail, Save Local
+      
       if (supabase) {
           try {
             const { data: { user } } = await supabase.auth.getUser();
@@ -477,26 +435,23 @@ export const api = {
                         description: resource.description,
                         data: resource.data
                     });
-                if (!error) cloudSuccess = true;
-                else console.warn("Cloud publish failed:", error);
+                if (!error) return true;
             }
-          } catch (e) { console.error("Cloud publish exception:", e); }
+          } catch (e) { console.warn("Cloud publish failed, trying local", e); }
       }
 
-      if (cloudSuccess) return true;
-
-      // 2. Fallback to Local Publish
+      // Local Fallback
       try {
-          // Prevent saving huge blobs locally to avoid QuotaExceededError
-          const resourceStr = JSON.stringify(resource);
-          if (resourceStr.length > 4 * 1024 * 1024) { // > 4MB check
-              console.warn("Resource too large for local storage");
+          // Check size before saving to avoid crash
+          const str = JSON.stringify(resource);
+          if (str.length > 4 * 1024 * 1024) {
+              alert("File quá lớn để lưu offline. Vui lòng kết nối mạng hoặc giảm kích thước.");
               return false;
           }
 
           const newResource: SharedResource = {
               id: `local-${Date.now()}`,
-              user_id: 'local-user',
+              user_id: 'local',
               created_at: new Date().toISOString(),
               likes: 0,
               downloads: 0,
@@ -505,15 +460,14 @@ export const api = {
 
           const localStr = localStorage.getItem(LOCAL_RESOURCES_KEY);
           const localData: SharedResource[] = localStr ? JSON.parse(localStr) : [];
-          const updatedData = [newResource, ...localData].slice(0, 20);
           
+          // Keep only last 20 local items
+          const updatedData = [newResource, ...localData].slice(0, 20);
           localStorage.setItem(LOCAL_RESOURCES_KEY, JSON.stringify(updatedData));
           return true;
       } catch (e: any) {
-          console.error("Local publish failed", e);
-          // Check specifically for quota error
-          if (e.name === 'QuotaExceededError' || e.code === 22) {
-              alert("Bộ nhớ trình duyệt đã đầy. Không thể lưu thêm dữ liệu offline lớn.");
+          if (e.name === 'QuotaExceededError') {
+              alert("Bộ nhớ trình duyệt đầy. Xóa bớt bài cũ để đăng mới.");
           }
           return false;
       }

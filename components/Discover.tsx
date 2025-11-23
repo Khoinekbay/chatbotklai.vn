@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { api } from '../utils/api';
 import { SharedResource, User } from '../types';
-import { XIcon, SearchIcon, HeartIcon, DownloadIcon, FlashcardIcon, MindMapIcon, ImageIcon, FileIcon, PenIcon, PlusIcon, AttachmentIcon, TrashIcon } from './Icons';
+import { XIcon, SearchIcon, HeartIcon, DownloadIcon, FlashcardIcon, MindMapIcon, ImageIcon, FileIcon, PenIcon, PlusIcon, AttachmentIcon, TrashIcon, CheckIcon } from './Icons';
 
 interface DiscoverProps {
   onClose: () => void;
@@ -24,6 +24,9 @@ const Discover: React.FC<DiscoverProps> = ({ onClose, onOpenResource, currentUse
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Detail View State
+  const [selectedResource, setSelectedResource] = useState<SharedResource | null>(null);
 
   useEffect(() => {
       const load = async () => {
@@ -108,7 +111,7 @@ const Discover: React.FC<DiscoverProps> = ({ onClose, onOpenResource, currentUse
       if (!postTitle.trim() || (!postContent.trim() && postFiles.length === 0)) return;
       setIsSubmitting(true);
       
-      let type: SharedResource['type'] = 'exercise'; // Default to text/exercise
+      let type: SharedResource['type'] = 'exercise';
       if (postFiles.length > 0) {
           const mime = postFiles[0].mimeType;
           if (mime.startsWith('image/')) type = 'image';
@@ -120,7 +123,7 @@ const Discover: React.FC<DiscoverProps> = ({ onClose, onOpenResource, currentUse
           avatar: currentUser.avatar || '😊',
           type: type,
           title: postTitle,
-          description: postContent.length > 100 ? postContent.substring(0, 97) + '...' : postContent,
+          description: postContent,
           data: { 
               text: postContent,
               files: postFiles.map(f => ({ 
@@ -136,9 +139,6 @@ const Discover: React.FC<DiscoverProps> = ({ onClose, onOpenResource, currentUse
           setPostTitle('');
           setPostContent('');
           setPostFiles([]);
-          alert("Đăng bài thành công!");
-      } else {
-          alert("Đăng bài thất bại. Vui lòng thử lại (File có thể quá lớn hoặc lỗi kết nối).");
       }
       setIsSubmitting(false);
   };
@@ -193,7 +193,7 @@ const Discover: React.FC<DiscoverProps> = ({ onClose, onOpenResource, currentUse
             {/* Grid */}
             <div className="flex-1 overflow-y-auto p-6 bg-input-bg/30 scrollbar-thin scrollbar-thumb-border relative">
                 
-                {/* Create Post Input Area (Facebook Style) */}
+                {/* Create Post Input Area */}
                 <div 
                     onClick={handleCreateClick}
                     className="bg-card border border-border rounded-xl p-4 mb-6 flex items-center gap-3 cursor-pointer hover:shadow-md transition-all shadow-sm"
@@ -223,7 +223,7 @@ const Discover: React.FC<DiscoverProps> = ({ onClose, onOpenResource, currentUse
                 ) : (
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 pb-20">
                         {filteredResources.map(res => (
-                            <div key={res.id} className="bg-card border border-border rounded-xl overflow-hidden hover:shadow-lg transition-all group flex flex-col h-full cursor-pointer" onClick={() => onOpenResource(res.type, res.data)}>
+                            <div key={res.id} className="bg-card border border-border rounded-xl overflow-hidden hover:shadow-lg transition-all group flex flex-col h-full cursor-pointer" onClick={() => setSelectedResource(res)}>
                                 <div className={`h-40 relative overflow-hidden flex items-center justify-center ${getBgColor(res.type)}`}>
                                     {/* Custom Previews based on type */}
                                     {res.type === 'image' && res.data?.files?.[0]?.dataUrl ? (
@@ -263,7 +263,7 @@ const Discover: React.FC<DiscoverProps> = ({ onClose, onOpenResource, currentUse
                 )}
             </div>
 
-            {/* Floating Action Button - Always visible */}
+            {/* Floating Action Button */}
             <button 
                 onClick={handleCreateClick}
                 className="absolute bottom-8 right-8 w-14 h-14 bg-brand hover:bg-brand/90 text-white rounded-full shadow-xl flex items-center justify-center transition-transform hover:scale-110 active:scale-95 z-20"
@@ -271,6 +271,79 @@ const Discover: React.FC<DiscoverProps> = ({ onClose, onOpenResource, currentUse
             >
                 <PlusIcon className="w-8 h-8" />
             </button>
+
+            {/* Resource Detail Modal */}
+            {selectedResource && (
+                <div className="absolute inset-0 z-40 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-slide-in-up">
+                    <div className="bg-card w-full max-w-3xl rounded-2xl border border-border shadow-2xl flex flex-col max-h-[85vh] overflow-hidden animate-message-pop-in">
+                        {/* Modal Header */}
+                        <div className="p-4 border-b border-border flex items-start justify-between bg-sidebar/30">
+                            <div className="flex flex-col gap-1">
+                                <span className="text-[10px] font-bold uppercase tracking-wider text-brand bg-brand/10 px-2 py-0.5 rounded w-fit">{selectedResource.type}</span>
+                                <h2 className="text-xl font-bold text-text-primary line-clamp-2">{selectedResource.title}</h2>
+                            </div>
+                            <button onClick={() => setSelectedResource(null)} className="p-1.5 hover:bg-black/10 dark:hover:bg-white/10 rounded-full">
+                                <XIcon className="w-6 h-6 text-text-secondary"/>
+                            </button>
+                        </div>
+
+                        {/* Modal Content */}
+                        <div className="p-6 overflow-y-auto flex-1">
+                            {/* Author */}
+                            <div className="flex items-center gap-3 mb-6">
+                                <div className="w-10 h-10 rounded-full bg-gray-200 overflow-hidden border border-border">
+                                    {selectedResource.avatar?.startsWith('data:') ? <img src={selectedResource.avatar} className="w-full h-full object-cover"/> : <div className="w-full h-full flex items-center justify-center text-lg">{selectedResource.avatar || '👤'}</div>}
+                                </div>
+                                <div>
+                                    <p className="font-bold text-sm">{selectedResource.username}</p>
+                                    <p className="text-xs text-text-secondary">{new Date(selectedResource.created_at).toLocaleDateString()}</p>
+                                </div>
+                            </div>
+
+                            {/* Body */}
+                            <div className="prose dark:prose-invert max-w-none mb-6">
+                                <p className="whitespace-pre-wrap text-sm leading-relaxed">{selectedResource.description}</p>
+                            </div>
+
+                            {/* Files/Attachments Preview */}
+                            {selectedResource.data?.files && selectedResource.data.files.length > 0 && (
+                                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mt-4">
+                                    {selectedResource.data.files.map((file: any, i: number) => (
+                                        <div key={i} className="border border-border rounded-lg overflow-hidden group relative">
+                                            {file.mimeType.startsWith('image/') ? (
+                                                <img src={file.dataUrl} className="w-full h-32 object-cover" />
+                                            ) : (
+                                                <div className="w-full h-32 bg-sidebar flex flex-col items-center justify-center p-2">
+                                                    <FileIcon className="w-8 h-8 text-text-secondary mb-2" />
+                                                    <span className="text-xs text-center text-text-secondary break-all line-clamp-2">{file.name}</span>
+                                                </div>
+                                            )}
+                                            <a 
+                                                href={file.dataUrl} 
+                                                download={file.name}
+                                                className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white font-bold gap-2"
+                                            >
+                                                <DownloadIcon className="w-5 h-5" /> Tải về
+                                            </a>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Modal Footer */}
+                        <div className="p-4 border-t border-border bg-sidebar/30 flex justify-end gap-3">
+                            <button onClick={() => setSelectedResource(null)} className="px-4 py-2 rounded-lg text-sm font-medium hover:bg-card-hover transition-colors">Đóng</button>
+                            <button 
+                                onClick={() => { onOpenResource(selectedResource.type, selectedResource.data); setSelectedResource(null); }}
+                                className="px-6 py-2 bg-brand text-white rounded-lg text-sm font-bold shadow-md hover:bg-brand/90 transition-transform active:scale-95"
+                            >
+                                {selectedResource.type === 'exercise' ? 'Làm bài này' : selectedResource.type === 'flashcard' ? 'Học ngay' : 'Xem chi tiết'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* Create Post Modal */}
             {isCreating && (
@@ -312,12 +385,13 @@ const Discover: React.FC<DiscoverProps> = ({ onClose, onOpenResource, currentUse
                                 onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
                                 onDragLeave={() => setIsDragging(false)}
                                 onDrop={handleDrop}
-                                className={`border-2 border-dashed rounded-lg p-4 flex flex-col items-center justify-center transition-colors min-h-[100px] ${isDragging ? 'border-brand bg-brand/5' : 'border-border bg-input-bg/50'}`}
+                                onClick={() => fileInputRef.current?.click()}
+                                className={`border-2 border-dashed rounded-lg p-6 flex flex-col items-center justify-center transition-colors min-h-[120px] cursor-pointer group ${isDragging ? 'border-brand bg-brand/5' : 'border-border hover:border-brand hover:bg-input-bg'}`}
                             >
                                 {postFiles.length > 0 ? (
-                                    <div className="w-full grid grid-cols-2 gap-2">
+                                    <div className="w-full grid grid-cols-2 gap-2" onClick={e => e.stopPropagation()}>
                                        {postFiles.map((file, i) => (
-                                           <div key={i} className="relative flex items-center gap-2 bg-card p-2 rounded border border-border">
+                                           <div key={i} className="relative flex items-center gap-2 bg-card p-2 rounded border border-border shadow-sm">
                                                <div className="w-8 h-8 bg-gray-100 rounded flex items-center justify-center flex-shrink-0 overflow-hidden">
                                                    {file.mimeType.startsWith('image/') ? <img src={`data:${file.mimeType};base64,${file.data}`} className="w-full h-full object-cover" /> : <FileIcon className="w-4 h-4 text-text-secondary"/>}
                                                </div>
@@ -325,16 +399,18 @@ const Discover: React.FC<DiscoverProps> = ({ onClose, onOpenResource, currentUse
                                                <button onClick={() => removeFile(i)} className="text-red-500 hover:bg-red-100 rounded p-1"><XIcon className="w-3 h-3" /></button>
                                            </div>
                                        ))}
-                                       <button onClick={() => fileInputRef.current?.click()} className="flex items-center justify-center gap-2 bg-card p-2 rounded border border-border hover:bg-input-bg text-xs font-medium text-text-secondary">
-                                           <PlusIcon className="w-4 h-4" /> Thêm file
+                                       <button onClick={() => fileInputRef.current?.click()} className="flex items-center justify-center gap-2 bg-card p-2 rounded border border-border hover:bg-input-bg text-xs font-medium text-text-secondary border-dashed">
+                                           <PlusIcon className="w-4 h-4" /> Thêm file khác
                                        </button>
                                     </div>
                                 ) : (
-                                    <div className="text-center py-2 cursor-pointer w-full" onClick={() => fileInputRef.current?.click()}>
-                                        <AttachmentIcon className="w-8 h-8 text-text-secondary mx-auto mb-2 opacity-50" />
-                                        <p className="text-sm text-text-secondary">Kéo thả file hoặc <span className="text-brand font-medium">chọn file</span></p>
-                                        <p className="text-[10px] text-text-secondary/60 mt-1">Hỗ trợ ảnh, PDF, tài liệu...</p>
-                                    </div>
+                                    <>
+                                        <div className="p-3 bg-input-bg rounded-full mb-2 group-hover:scale-110 transition-transform">
+                                            <AttachmentIcon className="w-6 h-6 text-text-secondary" />
+                                        </div>
+                                        <p className="text-sm font-medium text-text-primary">Chọn file hoặc kéo thả vào đây</p>
+                                        <p className="text-[10px] text-text-secondary mt-1">Hỗ trợ ảnh, PDF, Word, Excel...</p>
+                                    </>
                                 )}
                                 <input type="file" ref={fileInputRef} className="hidden" multiple onChange={handleFileSelect} />
                             </div>
