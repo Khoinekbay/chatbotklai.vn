@@ -1,9 +1,8 @@
 
-
 import React, { useState, useEffect, useRef } from 'react';
 import { api } from '../utils/api';
 import { SharedResource, User } from '../types';
-import { XIcon, SearchIcon, HeartIcon, DownloadIcon, FlashcardIcon, MindMapIcon, ImageIcon, FileIcon, PenIcon, PlusIcon, AttachmentIcon, TrashIcon, CheckIcon, TrophyIcon, FireIcon } from './Icons';
+import { XIcon, SearchIcon, HeartIcon, DownloadIcon, FlashcardIcon, MindMapIcon, ImageIcon, FileIcon, PenIcon, PlusIcon, AttachmentIcon, TrashIcon, CheckIcon, TrophyIcon, FireIcon, GlobeIcon, LockIcon } from './Icons';
 
 interface DiscoverProps {
   onClose: () => void;
@@ -35,6 +34,7 @@ const Discover: React.FC<DiscoverProps> = ({ onClose, onOpenResource, currentUse
   const [sortBy, setSortBy] = useState<'newest' | 'trending'>('trending');
   const [search, setSearch] = useState('');
   const [likedPosts, setLikedPosts] = useState<Set<string>>(new Set());
+  const [connectionStatus, setConnectionStatus] = useState<'connected' | 'offline'>('connected');
   
   // Create Post State
   const [isCreating, setIsCreating] = useState(false);
@@ -52,6 +52,10 @@ const Discover: React.FC<DiscoverProps> = ({ onClose, onOpenResource, currentUse
   useEffect(() => {
       const load = async () => {
           setIsLoading(true);
+          // Check connection first
+          const isConnected = await api.checkConnection();
+          setConnectionStatus(isConnected ? 'connected' : 'offline');
+
           const data = await api.getSharedResources();
           setResources(data);
           
@@ -175,7 +179,7 @@ const Discover: React.FC<DiscoverProps> = ({ onClose, onOpenResource, currentUse
           subject: postSubject,
           data: { 
               text: postContent,
-              subject: postSubject, // Store inside data as well for compatibility
+              subject: postSubject, 
               files: postFiles.map(f => ({ 
                   name: f.name, 
                   dataUrl: `data:${f.mimeType};base64,${f.data}`, 
@@ -193,6 +197,9 @@ const Discover: React.FC<DiscoverProps> = ({ onClose, onOpenResource, currentUse
       }
       setIsSubmitting(false);
   };
+
+  // Identify if a resource is local
+  const isLocalResource = (id: string) => id.startsWith('local-');
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 animate-slide-in-up">
@@ -260,6 +267,14 @@ const Discover: React.FC<DiscoverProps> = ({ onClose, onOpenResource, currentUse
                         </button>
                     </div>
                 </div>
+                
+                {/* Offline Warning Banner */}
+                {connectionStatus === 'offline' && (
+                    <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-lg p-2 flex items-center gap-2 text-xs text-yellow-600 dark:text-yellow-400 animate-pulse">
+                        <LockIcon className="w-3 h-3" />
+                        <span>Bạn đang ở chế độ Offline. Bài đăng sẽ chỉ lưu trên máy này và người khác không thể thấy.</span>
+                    </div>
+                )}
             </div>
 
             {/* Grid */}
@@ -300,12 +315,23 @@ const Discover: React.FC<DiscoverProps> = ({ onClose, onOpenResource, currentUse
                                 className={`bg-card border border-border rounded-2xl overflow-hidden hover:shadow-xl transition-all group flex flex-col h-full cursor-pointer relative ${sortBy === 'trending' && index < 3 ? 'ring-2 ring-yellow-400/50' : ''}`} 
                                 onClick={() => setSelectedResource(res)}
                             >
-                                {/* Ranking Badge */}
-                                {sortBy === 'trending' && index < 3 && (
-                                    <div className="absolute top-0 left-0 z-20 bg-yellow-400 text-yellow-900 px-3 py-1 rounded-br-xl font-black text-xs shadow-md flex items-center gap-1">
-                                        <TrophyIcon className="w-3 h-3" /> TOP {index + 1}
-                                    </div>
-                                )}
+                                {/* Badges */}
+                                <div className="absolute top-0 left-0 z-20 flex flex-col gap-1 p-2">
+                                    {sortBy === 'trending' && index < 3 && (
+                                        <div className="bg-yellow-400 text-yellow-900 px-2 py-1 rounded font-black text-[10px] shadow-md flex items-center gap-1 w-fit">
+                                            <TrophyIcon className="w-3 h-3" /> TOP {index + 1}
+                                        </div>
+                                    )}
+                                    {isLocalResource(res.id) ? (
+                                        <div className="bg-gray-600/80 backdrop-blur text-white px-2 py-1 rounded font-bold text-[9px] shadow-md flex items-center gap-1 w-fit" title="Chỉ hiển thị trên thiết bị này">
+                                            <LockIcon className="w-3 h-3" /> Thiết bị này
+                                        </div>
+                                    ) : (
+                                        <div className="bg-blue-500/80 backdrop-blur text-white px-2 py-1 rounded font-bold text-[9px] shadow-md flex items-center gap-1 w-fit" title="Hiển thị với mọi người">
+                                            <GlobeIcon className="w-3 h-3" /> Công khai
+                                        </div>
+                                    )}
+                                </div>
 
                                 <div className="h-40 relative overflow-hidden flex items-center justify-center bg-sidebar/50 group-hover:bg-sidebar transition-colors">
                                     {/* Type Icon / Preview */}
@@ -370,6 +396,11 @@ const Discover: React.FC<DiscoverProps> = ({ onClose, onOpenResource, currentUse
                         <div className="p-4 border-b border-border flex items-start justify-between bg-sidebar/30">
                             <div className="flex flex-col gap-2">
                                 <div className="flex gap-2">
+                                    {isLocalResource(selectedResource.id) ? (
+                                        <span className="text-[10px] font-bold uppercase tracking-wider bg-gray-600 text-white px-2 py-0.5 rounded w-fit flex items-center gap-1"><LockIcon className="w-3 h-3"/> Local</span>
+                                    ) : (
+                                        <span className="text-[10px] font-bold uppercase tracking-wider bg-blue-500 text-white px-2 py-0.5 rounded w-fit flex items-center gap-1"><GlobeIcon className="w-3 h-3"/> Public</span>
+                                    )}
                                     <span className={`text-[10px] font-bold uppercase tracking-wider text-white px-2 py-0.5 rounded w-fit ${getSubjectColor(selectedResource.subject || 'Tự do')}`}>{selectedResource.subject || 'Tự do'}</span>
                                     <span className="text-[10px] font-bold uppercase tracking-wider text-text-secondary bg-input-bg px-2 py-0.5 rounded w-fit border border-border">{selectedResource.type}</span>
                                 </div>
