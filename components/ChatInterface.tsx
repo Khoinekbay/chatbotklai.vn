@@ -1060,12 +1060,12 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
 
       setIsPublishingMessage(false);
       setPublishContent(null);
-      if (result === 'cloud') {
+      if (result.success && result.status === 'cloud') {
           alert("Đăng bài thành công lên Hub! 🌍");
-      } else if (result === 'local') {
+      } else if (result.success && result.status === 'local') {
           alert("Đã đăng bài ở chế độ OFFLINE (Chỉ lưu trên máy này).");
       } else {
-          alert("Đăng bài thất bại. Vui lòng thử lại.");
+          alert(`Đăng bài thất bại.\nLỗi: ${result.error || "Không xác định"}`);
       }
   };
 

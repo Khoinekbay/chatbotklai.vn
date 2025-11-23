@@ -432,17 +432,19 @@ export const api = {
       return finalResources.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
   },
 
-  publishResource: async (resource: Omit<SharedResource, 'id' | 'user_id' | 'created_at' | 'likes' | 'downloads'>): Promise<'cloud' | 'local' | 'error'> => {
+  publishResource: async (resource: Omit<SharedResource, 'id' | 'user_id' | 'created_at' | 'likes' | 'downloads'>): Promise<{ success: boolean; status: 'cloud' | 'local' | 'error'; error?: string }> => {
       // Prepare payload
       const payloadData = { ...resource.data, subject: resource.subject || 'Tự do' };
       
       if (supabase) {
           try {
             const { data: { user } } = await supabase.auth.getUser();
-            const userId = user ? user.id : 'anon_user'; 
+            // IMPORTANT: Do NOT use a random string like 'anon_user' if the DB expects UUID. 
+            // Use undefined (Supabase/Postgres will handle default or NULL) or a valid UUID.
+            // If the table schema for user_id is uuid references auth.users, passing a random string causes 22P02 or 23503.
+            // If user is null, we pass null (assuming RLS allows anon inserts with null user_id).
+            const userId = user ? user.id : undefined; 
             
-            // We try to insert even if user is null, assuming RLS might allow public inserts (or demo users)
-            // If RLS blocks it, it will error and fall back to local
             const { error } = await supabase.from('shared_resources').insert({
                     user_id: userId,
                     username: resource.username,
@@ -452,18 +454,22 @@ export const api = {
                     description: resource.description,
                     data: payloadData
                 });
-            if (!error) return 'cloud';
-            console.warn("Cloud publish error:", error.message);
-          } catch (e) { console.warn("Cloud publish failed, trying local", e); }
+            if (!error) return { success: true, status: 'cloud' };
+            
+            console.warn("Cloud publish error:", error);
+            // Return the specific error message to help debugging
+            if (error.code === '42501') return { success: false, status: 'error', error: 'Lỗi phân quyền (RLS). Vui lòng chạy SQL cập nhật.' };
+            if (error.code === '23503' || error.code === '22P02') return { success: false, status: 'error', error: 'Lỗi định dạng ID người dùng.' };
+            return { success: false, status: 'error', error: error.message };
+
+          } catch (e: any) { console.warn("Cloud publish exception, trying local", e); }
       }
 
       // Local Fallback
       try {
-          // Check size before saving to avoid crash
           const str = JSON.stringify(resource);
           if (str.length > 4 * 1024 * 1024) {
-              alert("File quá lớn để lưu offline. Vui lòng kết nối mạng hoặc giảm kích thước.");
-              return 'error';
+              return { success: false, status: 'error', error: 'File quá lớn để lưu offline.' };
           }
 
           const newResource: SharedResource = {
@@ -479,34 +485,31 @@ export const api = {
 
           const localStr = localStorage.getItem(LOCAL_RESOURCES_KEY);
           const localData: SharedResource[] = localStr ? JSON.parse(localStr) : [];
-          
-          // Keep only last 20 local items to save space
           const updatedData = [newResource, ...localData].slice(0, 20);
           localStorage.setItem(LOCAL_RESOURCES_KEY, JSON.stringify(updatedData));
-          return 'local';
+          return { success: true, status: 'local' };
       } catch (e: any) {
           if (e.name === 'QuotaExceededError') {
-              alert("Bộ nhớ trình duyệt đầy. Vui lòng xóa bớt bài cũ để đăng mới.");
+              return { success: false, status: 'error', error: 'Bộ nhớ trình duyệt đầy. Vui lòng xóa bớt bài cũ.' };
           }
-          return 'error';
+          return { success: false, status: 'error', error: e.message };
       }
   },
 
-  retryPublish: async (localId: string): Promise<boolean> => {
-      if (!supabase) return false;
+  retryPublish: async (localId: string): Promise<{ success: boolean; error?: string }> => {
+      if (!supabase) return { success: false, error: "Chưa cấu hình Supabase" };
       
       try {
           const localStr = localStorage.getItem(LOCAL_RESOURCES_KEY);
-          if (!localStr) return false;
+          if (!localStr) return { success: false, error: "Không tìm thấy dữ liệu Local" };
           
           const localData: SharedResource[] = JSON.parse(localStr);
           const resource = localData.find(r => r.id === localId);
           
-          if (!resource) return false;
+          if (!resource) return { success: false, error: "Bài viết không tồn tại" };
 
-          // Try explicit cloud insert
           const { data: { user } } = await supabase.auth.getUser();
-          const userId = user ? user.id : 'anon_user'; 
+          const userId = user ? user.id : undefined; 
 
           const { error } = await supabase.from('shared_resources').insert({
                 user_id: userId,
@@ -520,16 +523,16 @@ export const api = {
           });
 
           if (!error) {
-              // Success: delete local
               const updatedData = localData.filter(r => r.id !== localId);
               localStorage.setItem(LOCAL_RESOURCES_KEY, JSON.stringify(updatedData));
-              return true;
+              return { success: true };
           } else {
-              console.warn("Retry upload failed:", error.message);
-              return false;
+              console.warn("Retry upload failed:", error);
+              if (error.code === '42501') return { success: false, error: 'Lỗi quyền truy cập (RLS). Hãy kiểm tra SQL.' };
+              return { success: false, error: error.message };
           }
-      } catch (e) {
-          return false;
+      } catch (e: any) {
+          return { success: false, error: e.message || "Lỗi không xác định" };
       }
   },
 

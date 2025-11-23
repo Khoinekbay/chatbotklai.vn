@@ -138,20 +138,20 @@ const Discover: React.FC<DiscoverProps> = ({ onClose, onOpenResource, currentUse
   const handleRetryPublish = async (e: React.MouseEvent, resource: SharedResource) => {
       e.stopPropagation();
       if (connectionStatus === 'offline') {
-          alert("Bạn đang offline. Vui lòng kết nối mạng trước khi thử lại.");
-          return;
+          const stillTry = window.confirm("Ứng dụng đang phát hiện offline. Bạn có muốn thử kết nối lại không?");
+          if (!stillTry) return;
       }
       
       const confirm = window.confirm("Bạn muốn đăng bài viết này lên Cloud (Công khai)?");
       if (!confirm) return;
 
       setIsLoading(true);
-      const success = await api.retryPublish(resource.id);
-      if (success) {
-          alert("Đăng lên Cloud thành công!");
+      const result = await api.retryPublish(resource.id);
+      if (result.success) {
+          alert("Đăng lên Cloud thành công! 🎉");
           setRefreshKey(prev => prev + 1);
       } else {
-          alert("Vẫn chưa thể kết nối đến Server. Bài viết vẫn được lưu offline.");
+          alert(`Vẫn chưa thể kết nối đến Server.\nLỗi: ${result.error || "Không xác định"}\nBài viết vẫn được lưu offline.`);
       }
       setIsLoading(false);
   };
@@ -219,14 +219,14 @@ const Discover: React.FC<DiscoverProps> = ({ onClose, onOpenResource, currentUse
           }
       });
 
-      if (result === 'cloud') {
+      if (result.success && result.status === 'cloud') {
           setIsCreating(false);
           setPostTitle('');
           setPostContent('');
           setPostFiles([]);
           setPostSubject('Tự do');
           alert("Đăng bài thành công lên Hub! 🌍");
-      } else if (result === 'local') {
+      } else if (result.success && result.status === 'local') {
           setIsCreating(false);
           setPostTitle('');
           setPostContent('');
@@ -234,7 +234,7 @@ const Discover: React.FC<DiscoverProps> = ({ onClose, onOpenResource, currentUse
           setPostSubject('Tự do');
           alert("Đã đăng bài ở chế độ OFFLINE (Chỉ lưu trên máy này). Hãy đăng nhập hoặc kiểm tra mạng để chia sẻ công khai.");
       } else {
-          alert("Đăng bài thất bại. Vui lòng thử lại.");
+          alert(`Đăng bài thất bại.\nLỗi: ${result.error || "Không xác định"}`);
       }
       setIsSubmitting(false);
   };
