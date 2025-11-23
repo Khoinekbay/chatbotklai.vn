@@ -1,5 +1,4 @@
 
-
 import { User, ChatSession, LearningStats, SharedResource } from '../types';
 import { supabase } from './supabaseClient';
 
@@ -433,26 +432,28 @@ export const api = {
       return finalResources.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
   },
 
-  publishResource: async (resource: Omit<SharedResource, 'id' | 'user_id' | 'created_at' | 'likes' | 'downloads'>): Promise<boolean> => {
-      // Prepare payload: Inject subject into data if it's not already part of the structure
-      // We do this because we can't easily change the Supabase schema from here, so we store 'subject' in the JSON 'data' column.
+  publishResource: async (resource: Omit<SharedResource, 'id' | 'user_id' | 'created_at' | 'likes' | 'downloads'>): Promise<'cloud' | 'local' | 'error'> => {
+      // Prepare payload
       const payloadData = { ...resource.data, subject: resource.subject || 'Tự do' };
       
       if (supabase) {
           try {
             const { data: { user } } = await supabase.auth.getUser();
-            if (user) {
-                const { error } = await supabase.from('shared_resources').insert({
-                        user_id: user.id,
-                        username: resource.username,
-                        avatar: resource.avatar,
-                        type: resource.type,
-                        title: resource.title,
-                        description: resource.description,
-                        data: payloadData // Store subject here
-                    });
-                if (!error) return true;
-            }
+            const userId = user ? user.id : 'anon_user'; 
+            
+            // We try to insert even if user is null, assuming RLS might allow public inserts (or demo users)
+            // If RLS blocks it, it will error and fall back to local
+            const { error } = await supabase.from('shared_resources').insert({
+                    user_id: userId,
+                    username: resource.username,
+                    avatar: resource.avatar,
+                    type: resource.type,
+                    title: resource.title,
+                    description: resource.description,
+                    data: payloadData
+                });
+            if (!error) return 'cloud';
+            console.warn("Cloud publish error:", error.message);
           } catch (e) { console.warn("Cloud publish failed, trying local", e); }
       }
 
@@ -462,7 +463,7 @@ export const api = {
           const str = JSON.stringify(resource);
           if (str.length > 4 * 1024 * 1024) {
               alert("File quá lớn để lưu offline. Vui lòng kết nối mạng hoặc giảm kích thước.");
-              return false;
+              return 'error';
           }
 
           const newResource: SharedResource = {
@@ -479,16 +480,81 @@ export const api = {
           const localStr = localStorage.getItem(LOCAL_RESOURCES_KEY);
           const localData: SharedResource[] = localStr ? JSON.parse(localStr) : [];
           
-          // Keep only last 20 local items
+          // Keep only last 20 local items to save space
           const updatedData = [newResource, ...localData].slice(0, 20);
           localStorage.setItem(LOCAL_RESOURCES_KEY, JSON.stringify(updatedData));
-          return true;
+          return 'local';
       } catch (e: any) {
           if (e.name === 'QuotaExceededError') {
-              alert("Bộ nhớ trình duyệt đầy. Xóa bớt bài cũ để đăng mới.");
+              alert("Bộ nhớ trình duyệt đầy. Vui lòng xóa bớt bài cũ để đăng mới.");
           }
+          return 'error';
+      }
+  },
+
+  retryPublish: async (localId: string): Promise<boolean> => {
+      if (!supabase) return false;
+      
+      try {
+          const localStr = localStorage.getItem(LOCAL_RESOURCES_KEY);
+          if (!localStr) return false;
+          
+          const localData: SharedResource[] = JSON.parse(localStr);
+          const resource = localData.find(r => r.id === localId);
+          
+          if (!resource) return false;
+
+          // Try explicit cloud insert
+          const { data: { user } } = await supabase.auth.getUser();
+          const userId = user ? user.id : 'anon_user'; 
+
+          const { error } = await supabase.from('shared_resources').insert({
+                user_id: userId,
+                username: resource.username,
+                avatar: resource.avatar,
+                type: resource.type,
+                title: resource.title,
+                description: resource.description,
+                subject: resource.subject || 'Tự do',
+                data: resource.data
+          });
+
+          if (!error) {
+              // Success: delete local
+              const updatedData = localData.filter(r => r.id !== localId);
+              localStorage.setItem(LOCAL_RESOURCES_KEY, JSON.stringify(updatedData));
+              return true;
+          } else {
+              console.warn("Retry upload failed:", error.message);
+              return false;
+          }
+      } catch (e) {
           return false;
       }
+  },
+
+  deleteResource: async (resourceId: string): Promise<boolean> => {
+      // 1. Delete from Local Storage
+      if (resourceId.startsWith('local-')) {
+          try {
+              const localStr = localStorage.getItem(LOCAL_RESOURCES_KEY);
+              if (localStr) {
+                  const localData: SharedResource[] = JSON.parse(localStr);
+                  const updatedData = localData.filter(r => r.id !== resourceId);
+                  localStorage.setItem(LOCAL_RESOURCES_KEY, JSON.stringify(updatedData));
+                  return true;
+              }
+          } catch(e) { return false; }
+      }
+
+      // 2. Delete from Cloud
+      if (supabase) {
+          try {
+              const { error } = await supabase.from('shared_resources').delete().eq('id', resourceId);
+              return !error;
+          } catch (e) { return false; }
+      }
+      return false;
   },
 
   toggleLikeResource: async (resourceId: string, currentLikes: number, increment: boolean): Promise<number> => {

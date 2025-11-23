@@ -419,7 +419,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
       { id: 'generate_image', label: 'Tạo ảnh AI', icon: <MagicIcon className="w-5 h-5 text-purple-500" /> },
       { id: 'whiteboard', label: 'Bảng trắng', icon: <PresentationIcon className="w-5 h-5 text-blue-500" />, action: () => setIsWhiteboardOpen(true) },
       { id: 'probability', label: 'Xác suất', icon: <DiceIcon className="w-5 h-5 text-indigo-500" />, action: () => setIsProbabilitySimOpen(true) },
-      { id: 'grader', label: 'Chấm bài', icon: <GraderIcon className="w-5 h-5 text-green-600" /> },
+      { id: 'grader', label: 'Chấm bài', icon: <GraderIcon className="w-5 h-6 text-green-600" /> },
       { id: 'create_exam', label: 'Tạo đề thi', icon: <CreateExamIcon className="w-5 h-5" /> },
       { id: 'solve_exam', label: 'Giải đề', icon: <SolveExamIcon className="w-5 h-5" /> },
       { id: 'create_schedule', label: 'Lập lịch', icon: <CreateScheduleIcon className="w-5 h-5" /> },
@@ -1049,7 +1049,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
       else if (type === 'flashcard') dataToSave = publishContent.flashcards!;
       else dataToSave = { text: publishContent.text, files: publishContent.files };
 
-      const success = await api.publishResource({
+      const result = await api.publishResource({
           username: currentUser.username,
           avatar: currentUser.avatar || '😊',
           type: type,
@@ -1060,8 +1060,10 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ currentUser, onLogout, on
 
       setIsPublishingMessage(false);
       setPublishContent(null);
-      if (success) {
-          alert("Đăng bài thành công!");
+      if (result === 'cloud') {
+          alert("Đăng bài thành công lên Hub! 🌍");
+      } else if (result === 'local') {
+          alert("Đã đăng bài ở chế độ OFFLINE (Chỉ lưu trên máy này).");
       } else {
           alert("Đăng bài thất bại. Vui lòng thử lại.");
       }

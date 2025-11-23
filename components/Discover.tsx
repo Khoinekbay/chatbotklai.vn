@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { api } from '../utils/api';
 import { SharedResource, User } from '../types';
-import { XIcon, SearchIcon, HeartIcon, DownloadIcon, FlashcardIcon, MindMapIcon, ImageIcon, FileIcon, PenIcon, PlusIcon, AttachmentIcon, TrashIcon, CheckIcon, TrophyIcon, FireIcon, GlobeIcon, LockIcon } from './Icons';
+import { XIcon, SearchIcon, HeartIcon, DownloadIcon, FlashcardIcon, MindMapIcon, ImageIcon, FileIcon, PenIcon, PlusIcon, AttachmentIcon, TrashIcon, CheckIcon, TrophyIcon, FireIcon, GlobeIcon, LockIcon, UploadCloudIcon } from './Icons';
 
 interface DiscoverProps {
   onClose: () => void;
@@ -35,6 +35,7 @@ const Discover: React.FC<DiscoverProps> = ({ onClose, onOpenResource, currentUse
   const [search, setSearch] = useState('');
   const [likedPosts, setLikedPosts] = useState<Set<string>>(new Set());
   const [connectionStatus, setConnectionStatus] = useState<'connected' | 'offline'>('connected');
+  const [refreshKey, setRefreshKey] = useState(0);
   
   // Create Post State
   const [isCreating, setIsCreating] = useState(false);
@@ -68,7 +69,7 @@ const Discover: React.FC<DiscoverProps> = ({ onClose, onOpenResource, currentUse
           setIsLoading(false);
       };
       load();
-  }, [isCreating]); // Reload after creating
+  }, [isCreating, refreshKey]); // Reload after creating
 
   const filteredResources = resources
       .filter(res => {
@@ -100,10 +101,6 @@ const Discover: React.FC<DiscoverProps> = ({ onClose, onOpenResource, currentUse
   };
 
   const handleCreateClick = () => {
-      if (currentUser.isDemo) {
-          alert("Tính năng này chỉ dành cho thành viên. Vui lòng đăng nhập để chia sẻ kiến thức cùng cộng đồng!");
-          return;
-      }
       setIsCreating(true);
   };
 
@@ -123,6 +120,40 @@ const Discover: React.FC<DiscoverProps> = ({ onClose, onOpenResource, currentUse
 
       // API Call
       await api.toggleLikeResource(resource.id, resource.likes, !isLiked);
+  };
+
+  const handleDeleteResource = async (e: React.MouseEvent, resource: SharedResource) => {
+      e.stopPropagation();
+      if (window.confirm("Bạn có chắc chắn muốn xóa bài viết này không? Hành động này không thể hoàn tác.")) {
+          const success = await api.deleteResource(resource.id);
+          if (success) {
+              setResources(prev => prev.filter(r => r.id !== resource.id));
+              if (selectedResource?.id === resource.id) setSelectedResource(null);
+          } else {
+              alert("Không thể xóa bài viết. Vui lòng thử lại.");
+          }
+      }
+  };
+
+  const handleRetryPublish = async (e: React.MouseEvent, resource: SharedResource) => {
+      e.stopPropagation();
+      if (connectionStatus === 'offline') {
+          alert("Bạn đang offline. Vui lòng kết nối mạng trước khi thử lại.");
+          return;
+      }
+      
+      const confirm = window.confirm("Bạn muốn đăng bài viết này lên Cloud (Công khai)?");
+      if (!confirm) return;
+
+      setIsLoading(true);
+      const success = await api.retryPublish(resource.id);
+      if (success) {
+          alert("Đăng lên Cloud thành công!");
+          setRefreshKey(prev => prev + 1);
+      } else {
+          alert("Vẫn chưa thể kết nối đến Server. Bài viết vẫn được lưu offline.");
+      }
+      setIsLoading(false);
   };
 
   const fileToBase64 = (file: File): Promise<{ name: string; data: string; mimeType: string }> => {
@@ -170,7 +201,7 @@ const Discover: React.FC<DiscoverProps> = ({ onClose, onOpenResource, currentUse
           else type = 'document';
       }
 
-      const success = await api.publishResource({
+      const result = await api.publishResource({
           username: currentUser.username,
           avatar: currentUser.avatar || '😊',
           type: type,
@@ -188,12 +219,22 @@ const Discover: React.FC<DiscoverProps> = ({ onClose, onOpenResource, currentUse
           }
       });
 
-      if (success) {
+      if (result === 'cloud') {
           setIsCreating(false);
           setPostTitle('');
           setPostContent('');
           setPostFiles([]);
           setPostSubject('Tự do');
+          alert("Đăng bài thành công lên Hub! 🌍");
+      } else if (result === 'local') {
+          setIsCreating(false);
+          setPostTitle('');
+          setPostContent('');
+          setPostFiles([]);
+          setPostSubject('Tự do');
+          alert("Đã đăng bài ở chế độ OFFLINE (Chỉ lưu trên máy này). Hãy đăng nhập hoặc kiểm tra mạng để chia sẻ công khai.");
+      } else {
+          alert("Đăng bài thất bại. Vui lòng thử lại.");
       }
       setIsSubmitting(false);
   };
@@ -272,7 +313,7 @@ const Discover: React.FC<DiscoverProps> = ({ onClose, onOpenResource, currentUse
                 {connectionStatus === 'offline' && (
                     <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-lg p-2 flex items-center gap-2 text-xs text-yellow-600 dark:text-yellow-400 animate-pulse">
                         <LockIcon className="w-3 h-3" />
-                        <span>Bạn đang ở chế độ Offline. Bài đăng sẽ chỉ lưu trên máy này và người khác không thể thấy.</span>
+                        <span>Bạn đang ở chế độ Offline hoặc chưa đăng nhập. Bài đăng sẽ chỉ lưu trên máy này.</span>
                     </div>
                 )}
             </div>
@@ -289,7 +330,7 @@ const Discover: React.FC<DiscoverProps> = ({ onClose, onOpenResource, currentUse
                         {currentUser.avatar?.startsWith('data:') ? <img src={currentUser.avatar} className="w-full h-full object-cover"/> : <div className="w-full h-full flex items-center justify-center">{currentUser.avatar || '👤'}</div>}
                     </div>
                     <div className="flex-1 bg-input-bg rounded-full px-4 py-3 text-text-secondary text-sm hover:bg-sidebar transition-colors truncate">
-                        {currentUser.isDemo ? "Đăng nhập để chia sẻ bài viết..." : "Bạn muốn chia sẻ kiến thức gì hôm nay?"}
+                        {currentUser.isDemo ? "Chia sẻ với cộng đồng (Chế độ khách)..." : "Bạn muốn chia sẻ kiến thức gì hôm nay?"}
                     </div>
                     <div className="flex gap-2 text-text-secondary">
                         <div className="p-2 hover:bg-sidebar rounded-full text-green-500" title="Tài liệu"><FileIcon className="w-5 h-5" /></div>
@@ -315,22 +356,46 @@ const Discover: React.FC<DiscoverProps> = ({ onClose, onOpenResource, currentUse
                                 className={`bg-card border border-border rounded-2xl overflow-hidden hover:shadow-xl transition-all group flex flex-col h-full cursor-pointer relative ${sortBy === 'trending' && index < 3 ? 'ring-2 ring-yellow-400/50' : ''}`} 
                                 onClick={() => setSelectedResource(res)}
                             >
-                                {/* Badges */}
-                                <div className="absolute top-0 left-0 z-20 flex flex-col gap-1 p-2">
-                                    {sortBy === 'trending' && index < 3 && (
-                                        <div className="bg-yellow-400 text-yellow-900 px-2 py-1 rounded font-black text-[10px] shadow-md flex items-center gap-1 w-fit">
-                                            <TrophyIcon className="w-3 h-3" /> TOP {index + 1}
+                                {/* Badges & Actions */}
+                                <div className="absolute top-0 left-0 z-20 flex flex-col gap-1 p-2 w-full">
+                                    <div className="flex justify-between w-full">
+                                        <div className="flex flex-col gap-1">
+                                            {sortBy === 'trending' && index < 3 && (
+                                                <div className="bg-yellow-400 text-yellow-900 px-2 py-1 rounded font-black text-[10px] shadow-md flex items-center gap-1 w-fit">
+                                                    <TrophyIcon className="w-3 h-3" /> TOP {index + 1}
+                                                </div>
+                                            )}
+                                            {isLocalResource(res.id) ? (
+                                                <div className="flex items-center gap-1">
+                                                    <div className="bg-gray-600/80 backdrop-blur text-white px-2 py-1 rounded font-bold text-[9px] shadow-md flex items-center gap-1 w-fit" title="Chỉ hiển thị trên thiết bị này">
+                                                        <LockIcon className="w-3 h-3" /> Thiết bị này
+                                                    </div>
+                                                    {/* Retry Button */}
+                                                    <button 
+                                                        onClick={(e) => handleRetryPublish(e, res)}
+                                                        className="bg-blue-600 hover:bg-blue-700 text-white px-2 py-1 rounded font-bold text-[9px] shadow-md flex items-center gap-1 w-fit transition-colors" 
+                                                        title="Thử đăng lại lên Cloud"
+                                                    >
+                                                        <UploadCloudIcon className="w-3 h-3" /> Đăng
+                                                    </button>
+                                                </div>
+                                            ) : (
+                                                <div className="bg-blue-500/80 backdrop-blur text-white px-2 py-1 rounded font-bold text-[9px] shadow-md flex items-center gap-1 w-fit" title="Hiển thị với mọi người">
+                                                    <GlobeIcon className="w-3 h-3" /> Công khai
+                                                </div>
+                                            )}
                                         </div>
-                                    )}
-                                    {isLocalResource(res.id) ? (
-                                        <div className="bg-gray-600/80 backdrop-blur text-white px-2 py-1 rounded font-bold text-[9px] shadow-md flex items-center gap-1 w-fit" title="Chỉ hiển thị trên thiết bị này">
-                                            <LockIcon className="w-3 h-3" /> Thiết bị này
-                                        </div>
-                                    ) : (
-                                        <div className="bg-blue-500/80 backdrop-blur text-white px-2 py-1 rounded font-bold text-[9px] shadow-md flex items-center gap-1 w-fit" title="Hiển thị với mọi người">
-                                            <GlobeIcon className="w-3 h-3" /> Công khai
-                                        </div>
-                                    )}
+                                        
+                                        {res.username === currentUser.username && (
+                                            <button 
+                                                onClick={(e) => handleDeleteResource(e, res)}
+                                                className="p-2 bg-black/50 hover:bg-red-500 text-white rounded-full backdrop-blur-sm transition-colors opacity-0 group-hover:opacity-100 h-fit self-start"
+                                                title="Xóa bài viết"
+                                            >
+                                                <TrashIcon className="w-4 h-4" />
+                                            </button>
+                                        )}
+                                    </div>
                                 </div>
 
                                 <div className="h-40 relative overflow-hidden flex items-center justify-center bg-sidebar/50 group-hover:bg-sidebar transition-colors">
@@ -344,7 +409,7 @@ const Discover: React.FC<DiscoverProps> = ({ onClose, onOpenResource, currentUse
                                     )}
                                     
                                     {/* Subject Badge */}
-                                    <div className={`absolute top-3 right-3 ${getSubjectColor(res.subject || 'Tự do')} text-white px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase shadow-sm z-10`}>
+                                    <div className={`absolute bottom-2 right-2 ${getSubjectColor(res.subject || 'Tự do')} text-white px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase shadow-sm z-10`}>
                                         {res.subject || 'Tự do'}
                                     </div>
                                 </div>
@@ -406,9 +471,16 @@ const Discover: React.FC<DiscoverProps> = ({ onClose, onOpenResource, currentUse
                                 </div>
                                 <h2 className="text-xl font-bold text-text-primary line-clamp-2">{selectedResource.title}</h2>
                             </div>
-                            <button onClick={() => setSelectedResource(null)} className="p-1.5 hover:bg-black/10 dark:hover:bg-white/10 rounded-full">
-                                <XIcon className="w-6 h-6 text-text-secondary"/>
-                            </button>
+                            <div className="flex gap-2">
+                                {selectedResource.username === currentUser.username && (
+                                    <button onClick={(e) => handleDeleteResource(e, selectedResource)} className="p-1.5 hover:bg-red-500/10 text-text-secondary hover:text-red-500 rounded-full" title="Xóa">
+                                        <TrashIcon className="w-6 h-6"/>
+                                    </button>
+                                )}
+                                <button onClick={() => setSelectedResource(null)} className="p-1.5 hover:bg-black/10 dark:hover:bg-white/10 rounded-full">
+                                    <XIcon className="w-6 h-6 text-text-secondary"/>
+                                </button>
+                            </div>
                         </div>
 
                         {/* Modal Content */}
