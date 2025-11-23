@@ -1,8 +1,8 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { api } from '../utils/api';
 import { SharedResource, User } from '../types';
-import { XIcon, SearchIcon, HeartIcon, DownloadIcon, FlashcardIcon, MindMapIcon, ImageIcon, FileIcon, PenIcon, PlusIcon } from './Icons';
+import { XIcon, SearchIcon, HeartIcon, DownloadIcon, FlashcardIcon, MindMapIcon, ImageIcon, FileIcon, PenIcon, PlusIcon, AttachmentIcon, TrashIcon } from './Icons';
 
 interface DiscoverProps {
   onClose: () => void;
@@ -20,7 +20,10 @@ const Discover: React.FC<DiscoverProps> = ({ onClose, onOpenResource, currentUse
   const [isCreating, setIsCreating] = useState(false);
   const [postTitle, setPostTitle] = useState('');
   const [postContent, setPostContent] = useState('');
+  const [postFiles, setPostFiles] = useState<{ name: string; data: string; mimeType: string }[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
       const load = async () => {
@@ -67,26 +70,75 @@ const Discover: React.FC<DiscoverProps> = ({ onClose, onOpenResource, currentUse
       setIsCreating(true);
   };
 
+  const fileToBase64 = (file: File): Promise<{ name: string; data: string; mimeType: string }> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload = () => {
+        const result = reader.result as string;
+        const base64String = result.split(',')[1];
+        resolve({ name: file.name, data: base64String, mimeType: file.type });
+      };
+      reader.onerror = error => reject(error);
+    });
+  };
+
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+      if (e.target.files && e.target.files.length > 0) {
+          const newFiles = await Promise.all(Array.from(e.target.files).map(fileToBase64));
+          setPostFiles(prev => [...prev, ...newFiles]);
+      }
+      if (e.target) e.target.value = '';
+  };
+
+  const handleDrop = async (e: React.DragEvent) => {
+      e.preventDefault();
+      setIsDragging(false);
+      if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+          const newFiles = await Promise.all(Array.from(e.dataTransfer.files).map(fileToBase64));
+          setPostFiles(prev => [...prev, ...newFiles]);
+      }
+  };
+
+  const removeFile = (index: number) => {
+      setPostFiles(prev => prev.filter((_, i) => i !== index));
+  };
+
   const handleCreatePost = async () => {
-      if (!postTitle.trim() || !postContent.trim()) return;
+      if (!postTitle.trim() || (!postContent.trim() && postFiles.length === 0)) return;
       setIsSubmitting(true);
       
+      let type: SharedResource['type'] = 'exercise'; // Default to text/exercise
+      if (postFiles.length > 0) {
+          const mime = postFiles[0].mimeType;
+          if (mime.startsWith('image/')) type = 'image';
+          else type = 'document';
+      }
+
       const success = await api.publishResource({
           username: currentUser.username,
           avatar: currentUser.avatar || '😊',
-          type: 'exercise', // Default to text post
+          type: type,
           title: postTitle,
           description: postContent.length > 100 ? postContent.substring(0, 97) + '...' : postContent,
-          data: { text: postContent }
+          data: { 
+              text: postContent,
+              files: postFiles.map(f => ({ 
+                  name: f.name, 
+                  dataUrl: `data:${f.mimeType};base64,${f.data}`, 
+                  mimeType: f.mimeType 
+              }))
+          }
       });
 
       if (success) {
           setIsCreating(false);
           setPostTitle('');
           setPostContent('');
+          setPostFiles([]);
           alert("Đăng bài thành công!");
       } else {
-          alert("Đăng bài thất bại. Vui lòng thử lại.");
+          alert("Đăng bài thất bại. Vui lòng thử lại (File có thể quá lớn hoặc lỗi kết nối).");
       }
       setIsSubmitting(false);
   };
@@ -223,7 +275,7 @@ const Discover: React.FC<DiscoverProps> = ({ onClose, onOpenResource, currentUse
             {/* Create Post Modal */}
             {isCreating && (
                 <div className="absolute inset-0 z-30 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-slide-in-up">
-                    <div className="bg-card w-full max-w-lg rounded-2xl border border-border shadow-2xl p-6 flex flex-col gap-4">
+                    <div className="bg-card w-full max-w-lg rounded-2xl border border-border shadow-2xl p-6 flex flex-col gap-4 max-h-[90vh] overflow-y-auto">
                         <div className="flex items-center justify-between">
                             <h3 className="text-xl font-bold text-text-primary">Tạo bài viết mới</h3>
                             <button onClick={() => setIsCreating(false)} className="text-text-secondary hover:text-text-primary"><XIcon className="w-5 h-5"/></button>
@@ -252,14 +304,46 @@ const Discover: React.FC<DiscoverProps> = ({ onClose, onOpenResource, currentUse
                                 value={postContent}
                                 onChange={(e) => setPostContent(e.target.value)}
                                 placeholder="Bạn đang nghĩ gì? Hãy chia sẻ kiến thức, câu hỏi hoặc bài tập..."
-                                className="w-full h-40 p-3 bg-transparent outline-none resize-none text-base border border-border rounded-lg focus:border-brand"
+                                className="w-full h-32 p-3 bg-transparent outline-none resize-none text-base border border-border rounded-lg focus:border-brand"
                             />
+                            
+                            {/* File Drop Zone */}
+                            <div 
+                                onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+                                onDragLeave={() => setIsDragging(false)}
+                                onDrop={handleDrop}
+                                className={`border-2 border-dashed rounded-lg p-4 flex flex-col items-center justify-center transition-colors min-h-[100px] ${isDragging ? 'border-brand bg-brand/5' : 'border-border bg-input-bg/50'}`}
+                            >
+                                {postFiles.length > 0 ? (
+                                    <div className="w-full grid grid-cols-2 gap-2">
+                                       {postFiles.map((file, i) => (
+                                           <div key={i} className="relative flex items-center gap-2 bg-card p-2 rounded border border-border">
+                                               <div className="w-8 h-8 bg-gray-100 rounded flex items-center justify-center flex-shrink-0 overflow-hidden">
+                                                   {file.mimeType.startsWith('image/') ? <img src={`data:${file.mimeType};base64,${file.data}`} className="w-full h-full object-cover" /> : <FileIcon className="w-4 h-4 text-text-secondary"/>}
+                                               </div>
+                                               <span className="text-xs truncate flex-1">{file.name}</span>
+                                               <button onClick={() => removeFile(i)} className="text-red-500 hover:bg-red-100 rounded p-1"><XIcon className="w-3 h-3" /></button>
+                                           </div>
+                                       ))}
+                                       <button onClick={() => fileInputRef.current?.click()} className="flex items-center justify-center gap-2 bg-card p-2 rounded border border-border hover:bg-input-bg text-xs font-medium text-text-secondary">
+                                           <PlusIcon className="w-4 h-4" /> Thêm file
+                                       </button>
+                                    </div>
+                                ) : (
+                                    <div className="text-center py-2 cursor-pointer w-full" onClick={() => fileInputRef.current?.click()}>
+                                        <AttachmentIcon className="w-8 h-8 text-text-secondary mx-auto mb-2 opacity-50" />
+                                        <p className="text-sm text-text-secondary">Kéo thả file hoặc <span className="text-brand font-medium">chọn file</span></p>
+                                        <p className="text-[10px] text-text-secondary/60 mt-1">Hỗ trợ ảnh, PDF, tài liệu...</p>
+                                    </div>
+                                )}
+                                <input type="file" ref={fileInputRef} className="hidden" multiple onChange={handleFileSelect} />
+                            </div>
                         </div>
 
                         <div className="flex justify-end border-t border-border pt-4">
                             <button 
                                 onClick={handleCreatePost}
-                                disabled={!postTitle.trim() || !postContent.trim() || isSubmitting}
+                                disabled={!postTitle.trim() || (!postContent.trim() && postFiles.length === 0) || isSubmitting}
                                 className="px-6 py-2 bg-brand hover:bg-brand/90 text-white font-bold rounded-lg transition-colors disabled:opacity-50 flex items-center gap-2"
                             >
                                 {isSubmitting ? 'Đang đăng...' : 'Đăng bài'}
